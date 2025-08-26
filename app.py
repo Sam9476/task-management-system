@@ -75,15 +75,15 @@ else:
     # View Tasks
     # --------------------------
     if menu == "View Tasks":
-    st.subheader("All Tasks")
-    tasks = get_tasks() if user[4] in ["Admin","Manager"] else get_tasks(user[0])
-    
-    if tasks:
-        # Convert to DataFrame for proper column names
-        df = pd.DataFrame(tasks, columns=["Task ID", "Title", "Description", "Due Date", "Status", "Priority", "Category"])
-        st.table(df)  # Streamlit table will now show proper columns and no 0,1,2 index
-    else:
-        st.info("No tasks found.")
+        st.subheader("All Tasks")
+        tasks = get_tasks() if user[4] in ["Admin","Manager"] else get_tasks(user[0])
+        
+        if tasks:
+            df = pd.DataFrame(tasks, columns=["Task ID", "Title", "Description", "Due Date", "Status", "Priority", "Category"])
+            st.table(df)
+        else:
+            st.info("No tasks found.")
+
 
     # --------------------------
     # Add Task
@@ -155,4 +155,5 @@ else:
         """, (today,))
         overdue_tasks = cursor.fetchall()
         st.table(overdue_tasks)
+
 
