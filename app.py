@@ -14,7 +14,7 @@ def verify_user(username, password):
     cur.execute("SELECT employee_id, role FROM Users WHERE username=? AND password=?", (username, password))
     result = cur.fetchone()
     conn.close()
-    return result  # (employee_id, role) or None
+    return result
 
 def add_task(employee_id, title, description, due_datetime, priority, category, created_by):
     conn = get_connection()
@@ -26,13 +26,27 @@ def add_task(employee_id, title, description, due_datetime, priority, category, 
     conn.commit()
     conn.close()
 
-def get_tasks(role, employee_id):
+def get_tasks(role, employee_id, filter_status=None, search_keyword=None):
     conn = get_connection()
     cur = conn.cursor()
-    if role == "User":  # Users only see their own tasks
-        cur.execute("SELECT task_id, title, description, due_datetime, status, priority, category FROM Tasks WHERE employee_id=?", (employee_id,))
-    else:  # Admins & Managers see all tasks
-        cur.execute("SELECT task_id, title, description, due_datetime, status, priority, category FROM Tasks")
+    query = "SELECT task_id, employee_id, title, description, due_datetime, status, priority, category FROM Tasks"
+    params = []
+
+    if role == "User":  # User can only see their own tasks
+        query += " WHERE employee_id=?"
+        params.append(employee_id)
+    else:
+        query += " WHERE 1=1"
+
+    if filter_status:
+        query += " AND status=?"
+        params.append(filter_status)
+
+    if search_keyword:
+        query += " AND (title LIKE ? OR description LIKE ?)"
+        params.extend([f"%{search_keyword}%", f"%{search_keyword}%"])
+
+    cur.execute(query, params)
     rows = cur.fetchall()
     conn.close()
     return rows
@@ -88,7 +102,7 @@ else:
 
     menu = ["View Tasks"]
     if role in ["Admin", "Manager"]:
-        menu.insert(0, "Add Task")  # only Admin/Manager can add tasks
+        menu.insert(0, "Add Task")
 
     choice = st.sidebar.radio("Navigation", menu)
 
@@ -114,23 +128,36 @@ else:
     elif choice == "View Tasks":
         st.subheader("📌 Task List")
 
-        tasks = get_tasks(role, employee_id)
+        # Filters
+        filter_status = st.selectbox("Filter by Status", ["All", "Pending", "Completed"], index=0)
+        search_keyword = st.text_input("🔍 Search by keyword")
+
+        status_filter = None if filter_status == "All" else filter_status
+        tasks = get_tasks(role, employee_id, filter_status=status_filter, search_keyword=search_keyword)
 
         if tasks:
-            formatted = []
             for t in tasks:
-                task_id, title, desc, due_dt, status, priority, category = t
+                task_id, emp_id, title, desc, due_dt, status, priority, category = t
                 due_dt = datetime.strptime(due_dt, "%Y-%m-%d %H:%M:%S")
 
-                # Status Check: overdue / due soon
+                # Highlight overdue and due in <24h
                 if status == "Pending":
                     if due_dt < datetime.now():
                         status = "❌ Overdue"
                     elif due_dt < datetime.now() + timedelta(hours=24):
                         status = "⚠️ Due in <24h"
 
-                formatted.append([task_id, title, desc, due_dt.strftime("%d-%m-%Y %H:%M"), status, priority, category])
+                with st.expander(f"📌 {title} (Assigned to: {emp_id})"):
+                    st.write(f"**Description:** {desc}")
+                    st.write(f"**Due:** {due_dt.strftime('%d-%m-%Y %H:%M')}")
+                    st.write(f"**Priority:** {priority}")
+                    st.write(f"**Category:** {category}")
+                    st.write(f"**Status:** {status}")
 
-            st.table(formatted)
+                    if role in ["Admin", "Manager"] or emp_id == employee_id:
+                        if st.button(f"Mark as Completed ✅ (Task {task_id})"):
+                            update_task_status(task_id, "Completed")
+                            st.success(f"Task {task_id} marked as Completed!")
+                            st.rerun()
         else:
-            st.info("No tasks available.")
+            st.info("No tasks found.")
