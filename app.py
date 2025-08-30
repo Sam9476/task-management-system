@@ -1,81 +1,144 @@
 import streamlit as st
 import sqlite3
+import datetime
 import pandas as pd
-from datetime import datetime
 
-DB_FILE = "task_management.db"
+# ---------- DATABASE FUNCTIONS ----------
+def init_db():
+    conn = sqlite3.connect("task_management.db")
+    cursor = conn.cursor()
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS Users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE,
+        password TEXT,
+        role TEXT
+    )
+    """)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS Tasks (
+        task_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT,
+        description TEXT,
+        due_date TEXT,
+        status TEXT,
+        priority TEXT,
+        category TEXT,
+        assigned_to INTEGER,
+        FOREIGN KEY (assigned_to) REFERENCES Users(id)
+    )
+    """)
+    conn.commit()
+    conn.close()
 
-# ---------- DB FUNCTIONS ----------
 def get_user(username, password):
-    conn = sqlite3.connect(DB_FILE)
+    conn = sqlite3.connect("task_management.db")
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM Users WHERE username=? AND password=?", (username, password))
     user = cursor.fetchone()
     conn.close()
     return user
 
-def get_tasks(user_id=None, role=None):
-    conn = sqlite3.connect(DB_FILE)
+def get_tasks(user_id=None):
+    conn = sqlite3.connect("task_management.db")
     cursor = conn.cursor()
-    if role in ["Admin", "Manager"]:
-        cursor.execute("""SELECT task_id, title, description, due_date, status, priority, category, assigned_to FROM Tasks""")
+    if user_id:
+        cursor.execute("""
+            SELECT t.task_id, t.title, t.description, t.due_date, t.status, t.priority, t.category, u.username
+            FROM Tasks t
+            JOIN Users u ON t.assigned_to = u.id
+            WHERE t.assigned_to=?
+        """, (user_id,))
     else:
-        cursor.execute("""SELECT task_id, title, description, due_date, status, priority, category, assigned_to FROM Tasks WHERE assigned_to=?""", (user_id,))
+        cursor.execute("""
+            SELECT t.task_id, t.title, t.description, t.due_date, t.status, t.priority, t.category, u.username
+            FROM Tasks t
+            JOIN Users u ON t.assigned_to = u.id
+        """)
     tasks = cursor.fetchall()
     conn.close()
     return tasks
 
 def update_task_status(task_id, status):
-    conn = sqlite3.connect(DB_FILE)
+    conn = sqlite3.connect("task_management.db")
     cursor = conn.cursor()
     cursor.execute("UPDATE Tasks SET status=? WHERE task_id=?", (status, task_id))
     conn.commit()
     conn.close()
 
-def get_comments(task_id):
-    conn = sqlite3.connect(DB_FILE)
+def add_task(title, description, due_date, priority, category, assigned_to):
+    conn = sqlite3.connect("task_management.db")
     cursor = conn.cursor()
-    cursor.execute("""SELECT U.username, C.comment, C.timestamp 
-                      FROM Comments C JOIN Users U ON C.employee_id=U.user_id 
-                      WHERE task_id=? ORDER BY timestamp DESC""", (task_id,))
-    comments = cursor.fetchall()
-    conn.close()
-    return comments
-
-def add_comment(task_id, employee_id, comment):
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute("INSERT INTO Comments (task_id, employee_id, comment, timestamp) VALUES (?, ?, ?, ?)",
-                   (task_id, employee_id, comment, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+    cursor.execute("""
+        INSERT INTO Tasks (title, description, due_date, status, priority, category, assigned_to)
+        VALUES (?, ?, ?, 'Pending', ?, ?, ?)
+    """, (title, description, due_date, priority, category, assigned_to))
     conn.commit()
     conn.close()
 
-def create_task(title, description, due_date, priority, category, assigned_to):
-    conn = sqlite3.connect(DB_FILE)
+def get_overdue_and_today_tasks(user_id=None):
+    conn = sqlite3.connect("task_management.db")
     cursor = conn.cursor()
-    cursor.execute("""INSERT INTO Tasks (title, description, due_date, status, priority, category, assigned_to) 
-                      VALUES (?, ?, ?, 'Pending', ?, ?, ?)""",
-                   (title, description, due_date, priority, category, assigned_to))
-    conn.commit()
+    today = datetime.date.today().strftime("%Y-%m-%d")
+
+    if user_id:
+        cursor.execute("""
+            SELECT t.task_id, t.title, t.description, t.due_date, t.status, t.priority, t.category, u.username
+            FROM Tasks t
+            JOIN Users u ON t.assigned_to = u.id
+            WHERE date(t.due_date) < date(?)
+            AND t.assigned_to=?
+        """, (today, user_id))
+        overdue = cursor.fetchall()
+
+        cursor.execute("""
+            SELECT t.task_id, t.title, t.description, t.due_date, t.status, t.priority, t.category, u.username
+            FROM Tasks t
+            JOIN Users u ON t.assigned_to = u.id
+            WHERE date(t.due_date) = date(?)
+            AND t.assigned_to=?
+        """, (today, user_id))
+        today_tasks = cursor.fetchall()
+
+    else:
+        cursor.execute("""
+            SELECT t.task_id, t.title, t.description, t.due_date, t.status, t.priority, t.category, u.username
+            FROM Tasks t
+            JOIN Users u ON t.assigned_to = u.id
+            WHERE date(t.due_date) < date(?)
+        """, (today,))
+        overdue = cursor.fetchall()
+
+        cursor.execute("""
+            SELECT t.task_id, t.title, t.description, t.due_date, t.status, t.priority, t.category, u.username
+            FROM Tasks t
+            JOIN Users u ON t.assigned_to = u.id
+            WHERE date(t.due_date) = date(?)
+        """, (today,))
+        today_tasks = cursor.fetchall()
+
     conn.close()
+    return overdue, today_tasks
 
 def get_users():
-    conn = sqlite3.connect(DB_FILE)
+    conn = sqlite3.connect("task_management.db")
     cursor = conn.cursor()
-    cursor.execute("SELECT user_id, username FROM Users")
+    cursor.execute("SELECT id, username, role FROM Users")
     users = cursor.fetchall()
     conn.close()
     return users
 
-# ---------- STREAMLIT APP ----------
+# ---------- APP UI ----------
 st.set_page_config(page_title="📋 Task Management System", layout="wide")
-st.title("📋 Task Management System")
+init_db()
 
-# LOGIN SYSTEM
 if "user" not in st.session_state:
     st.session_state.user = None
 
-if st.session_state.user is None:
+st.title("📋 Task Management System")
+
+# ---------- LOGIN ----------
+if not st.session_state.user:
     st.subheader("Login")
     username = st.text_input("Username")
     password = st.text_input("Password", type="password")
@@ -83,82 +146,81 @@ if st.session_state.user is None:
         user = get_user(username, password)
         if user:
             st.session_state.user = user
-            st.rerun()
+            st.success(f"Logged in as {user[1]} ({user[3]})")
         else:
             st.error("Invalid credentials")
 else:
     user = st.session_state.user
-    st.sidebar.success(f"Logged in as {user[1]} ({user[3]})")
+    st.sidebar.title(f"Welcome, {user[1]} ({user[3]})")
     if st.sidebar.button("Logout"):
         st.session_state.user = None
         st.rerun()
 
-    # Sidebar Navigation
-    menu = st.sidebar.radio("Menu", ["View Tasks", "Overdue Tasks", "Create Task" if user[3] in ["Admin","Manager"] else "View Tasks"])
+    # Sidebar menu
+    if user[3] in ["Admin", "Manager"]:
+        menu = st.sidebar.radio("Menu", ["View Tasks", "Overdue Tasks", "Create Task"])
+    else:
+        menu = st.sidebar.radio("Menu", ["View My Tasks", "Overdue Tasks"])
 
-    # View Tasks Tab
-    if menu == "View Tasks":
-        st.subheader("All Tasks")
-        tasks = get_tasks(user[0], user[3])
-        for t in tasks:
-            with st.expander(f"{t[1]} (ID: {t[0]})"):
-                st.write(f"**Description:** {t[2]}")
-                st.write(f"**Due Date:** {t[3]}")
-                st.write(f"**Status:** {t[4]}")
-                st.write(f"**Priority:** {t[5]}")
-                st.write(f"**Category:** {t[6]}")
-                st.write(f"**Assigned To (ID):** {t[7]}")
+    # View Tasks
+    if menu in ["View Tasks", "View My Tasks"]:
+        st.subheader("📌 Tasks")
+        tasks = get_tasks(None if user[3] in ["Admin", "Manager"] else user[0])
 
-                if t[4] != "Completed" and st.button("✅ Mark as Complete", key=f"complete{t[0]}"):
-                    update_task_status(t[0], "Completed")
-                    st.success("Task marked as Completed ✅")
-                    st.rerun()
+        for task in tasks:
+            with st.expander(f"{task[1]} (ID: {task[0]})"):
+                st.write(f"**Title:** {task[1]}")
+                st.write(f"**Description:** {task[2]}")
+                st.write(f"**Due Date:** {task[3].split('.')[0]}")  # remove microseconds
+                st.write(f"**Status:** {task[4]}")
+                st.write(f"**Priority:** {task[5]}")
+                st.write(f"**Category:** {task[6]}")
+                st.write(f"**Assigned To:** {task[7]}")
 
-                st.markdown("**💬 Comments**")
-                for c in get_comments(t[0]):
-                    st.write(f"- {c[0]}: {c[1]} ({c[2]})")
-
-                new_comment = st.text_input("Add a comment:", key=f"comment{t[0]}")
-                if st.button("Submit Comment", key=f"submit{t[0]}"):
-                    if new_comment.strip():
-                        add_comment(t[0], user[0], new_comment)
+                if task[4] != "Completed":
+                    if st.button(f"Mark as Complete (ID {task[0]})", key=f"btn{task[0]}"):
+                        update_task_status(task[0], "Completed")
+                        st.success("Task marked as Completed ✅")
                         st.rerun()
 
-    # Overdue & Due Today
+    # Overdue & Today
     elif menu == "Overdue Tasks":
-        st.subheader("Overdue & Due Today Tasks")
+        st.subheader("⚠️ Overdue & Today's Tasks")
+        overdue, today_tasks = get_overdue_and_today_tasks(None if user[3] in ["Admin", "Manager"] else user[0])
 
-        tasks = get_tasks(user[0], user[3])
-        df = pd.DataFrame(tasks, columns=["ID", "Title", "Description", "Due Date", "Status", "Priority", "Category", "Assigned To"])
-        df["Due Date"] = pd.to_datetime(df["Due Date"])
-
-        overdue = df[df["Due Date"] < datetime.now()]
-        today = df[df["Due Date"].dt.date == datetime.now().date()]
-
-        if not overdue.empty:
+        if overdue:
             st.markdown("### ⏰ Overdue Tasks")
-            st.dataframe(overdue.drop(columns=["Assigned To"]).reset_index(drop=True))
+            df_overdue = pd.DataFrame(overdue, columns=["ID", "Title", "Description", "Due Date", "Status", "Priority", "Category", "Assigned To"])
+            st.table(df_overdue)
+        else:
+            st.info("No overdue tasks 🎉")
 
-        if not today.empty:
+        if today_tasks:
             st.markdown("### 📅 Tasks Due Today")
-            st.dataframe(today.drop(columns=["Assigned To"]).reset_index(drop=True))
+            df_today = pd.DataFrame(today_tasks, columns=["ID", "Title", "Description", "Due Date", "Status", "Priority", "Category", "Assigned To"])
+            st.table(df_today)
+        else:
+            st.info("No tasks due today 🎉")
 
-    # Create Task (Admin/Manager only)
+    # Create Task
     elif menu == "Create Task":
         st.subheader("➕ Create New Task")
         title = st.text_input("Title")
         description = st.text_area("Description")
-        due_date = st.text_input("Due Date (YYYY-MM-DD HH:MM:SS)")
-        priority = st.selectbox("Priority", ["Low", "Medium", "High"])
+        due_date = st.date_input("Due Date")
+        due_time = st.time_input("Due Time")
+        priority = st.selectbox("Priority", ["High", "Medium", "Low"])
         category = st.text_input("Category")
-        users = get_users()
-        user_map = {name: uid for uid, name in users}
-        assigned_to = st.selectbox("Assign To", list(user_map.keys()))
+
+        # assign only to Users
+        users = [u for u in get_users() if u[2] == "User"]
+        assigned_to = st.selectbox("Assign To", users, format_func=lambda x: x[1]) if users else None
 
         if st.button("Create Task"):
-            if title and description and due_date and category:
-                create_task(title, description, due_date, priority, category, user_map[assigned_to])
+            if assigned_to:
+                due_datetime = datetime.datetime.combine(due_date, due_time).strftime("%Y-%m-%d %H:%M:%S")
+                add_task(title, description, due_datetime, priority, category, assigned_to[0])
                 st.success("✅ Task created successfully!")
                 st.rerun()
             else:
-                st.error("Please fill all fields.")
+                st.error("No users available to assign task.")
