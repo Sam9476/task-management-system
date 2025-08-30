@@ -15,7 +15,6 @@ def login_user(username, password):
     cursor.execute("SELECT * FROM Users WHERE username=? AND password=?", (username, password))
     user = cursor.fetchone()
     if user:
-        # Return as dict
         return {"employee_id": user[0], "username": user[1], "role": user[3]}
     return None
 
@@ -39,7 +38,12 @@ def update_task_status(task_id, status):
     conn.commit()
 
 def get_comments(task_id):
-    cursor.execute("SELECT employee_id, comment, timestamp FROM Comments WHERE task_id=? ORDER BY timestamp DESC", (task_id,))
+    cursor.execute("""
+        SELECT employee_id, comment, timestamp 
+        FROM Comments 
+        WHERE task_id=? 
+        ORDER BY timestamp DESC
+    """, (task_id,))
     return cursor.fetchall()
 
 def add_comment(task_id, employee_id, comment):
@@ -70,7 +74,6 @@ if "user" not in st.session_state:
 else:
     user = st.session_state.user
     st.sidebar.write(f"Logged in as: {user['username']} ({user['role']})")
-
     menu = st.sidebar.selectbox("Menu", ["📋 All Tasks", "⚠️ Overdue & Due Soon", "➕ Create Task"])
     if st.sidebar.button("Logout"):
         del st.session_state.user
@@ -85,43 +88,39 @@ else:
         tasks = get_all_tasks() if user["role"] in ["Admin","Manager"] else get_tasks_by_employee(user["employee_id"])
 
         if tasks:
-            task_titles = [f"{t[1]} (ID: {t[0]})" for t in tasks]
-            selected_task_title = st.selectbox("Select a Task to View Details", task_titles)
-            selected_task = tasks[task_titles.index(selected_task_title)]
+            for t in tasks:
+                with st.expander(f"{t[1]} (ID: {t[0]})"):
+                    st.markdown(f"**Title:** {t[1]}")
+                    st.markdown(f"**Description:** {t[2]}")
+                    st.markdown(f"**Due Date & Time:** {t[3]}")
+                    st.markdown(f"**Status:** {t[4]}")
+                    st.markdown(f"**Priority:** {t[5]}")
+                    st.markdown(f"**Category:** {t[6]}")
+                    st.markdown(f"**Assigned To (Employee ID):** {t[7]}")
 
-            st.markdown(f"**Title:** {selected_task[1]}")
-            st.markdown(f"**Description:** {selected_task[2]}")
-            st.markdown(f"**Due Date & Time:** {selected_task[3]}")
-            st.markdown(f"**Status:** {selected_task[4]}")
-            st.markdown(f"**Priority:** {selected_task[5]}")
-            st.markdown(f"**Category:** {selected_task[6]}")
-            st.markdown(f"**Assigned To (Employee ID):** {selected_task[7]}")
+                    # Task completion for assigned user
+                    if t[7] == user["employee_id"] and t[4] != "Completed":
+                        if st.button("Mark as Completed ✅", key=f"complete_{t[0]}", type="primary"):
+                            update_task_status(t[0], "Completed")
+                            st.success("Task marked as Completed ✅")
+                            st.experimental_rerun()
 
-            # Task completion for assigned user
-            if selected_task[7] == user["employee_id"] and selected_task[4] != "Completed":
-                if st.button("Mark as Completed"):
-                    update_task_status(selected_task[0], "Completed")
-                    st.success("Task marked as Completed ✅")
-                    st.experimental_rerun()
+                    # Comments
+                    st.markdown("💬 **Comments**")
+                    comments = get_comments(t[0])
+                    if comments:
+                        for c in comments:
+                            st.write(f"- [{c[2]}] Employee {c[0]}: {c[1]}")
+                    else:
+                        st.info("No comments yet.")
 
-            # Comments
-            st.markdown("💬 **Comments**")
-            comments = get_comments(selected_task[0])
-            if comments:
-                for c in comments:
-                    st.write(f"- [{c[2]}] Employee {c[0]}: {c[1]}")
-            else:
-                st.info("No comments yet.")
-
-            # Add comment
-            new_comment = st.text_input(f"Add comment for Task {selected_task[0]}", key=f"c{selected_task[0]}")
-            if st.button(f"Add Comment {selected_task[0]}", key=f"b{selected_task[0]}"):
-                if new_comment.strip():
-                    add_comment(selected_task[0], user["employee_id"], new_comment)
-                    st.success("Comment added ✅")
-                    st.experimental_rerun()
-        else:
-            st.info("No tasks found.")
+                    # Add comment
+                    new_comment = st.text_input(f"Add comment for Task {t[0]}", key=f"c{t[0]}")
+                    if st.button(f"Add Comment", key=f"b{t[0]}"):
+                        if new_comment.strip():
+                            add_comment(t[0], user["employee_id"], new_comment)
+                            st.success("Comment added ✅")
+                            st.experimental_rerun()
 
     # ---------------------------
     # OVERDUE & DUE SOON
@@ -129,9 +128,8 @@ else:
     elif menu == "⚠️ Overdue & Due Soon":
         st.subheader("⚠️ Overdue & Due Soon")
 
-        today = datetime.now()
-        next_day = today + timedelta(days=1)
-        next_3_days = today + timedelta(days=3)
+        now = datetime.now()
+        next_24hr = now + timedelta(hours=24)
 
         # Due in next 24 hours
         st.markdown("**Tasks Due in Next 24 Hours**")
@@ -139,7 +137,7 @@ else:
             SELECT task_id, title, due_datetime, status FROM Tasks
             WHERE due_datetime BETWEEN ? AND ? AND status='Pending'
             ORDER BY due_datetime ASC
-        """, (today, next_day))
+        """, (now, next_24hr))
         tasks_24hr = cursor.fetchall()
         if tasks_24hr:
             st.table(tasks_24hr)
@@ -152,7 +150,7 @@ else:
             SELECT task_id, title, due_datetime, status FROM Tasks
             WHERE due_datetime < ? AND status='Pending'
             ORDER BY due_datetime ASC
-        """, (today,))
+        """, (now,))
         overdue_tasks = cursor.fetchall()
         if overdue_tasks:
             st.table(overdue_tasks)
@@ -167,9 +165,9 @@ else:
         if user["role"] in ["Admin","Manager"]:
             title = st.text_input("Title")
             description = st.text_area("Description")
-            due_datetime = st.date_input("Due Date") 
+            due_date = st.date_input("Due Date")
             due_time = st.time_input("Due Time")
-            due_full = datetime.combine(due_datetime, due_time)
+            due_full = datetime.combine(due_date, due_time)
             priority = st.selectbox("Priority", ["Low", "Medium", "High"])
             category = st.text_input("Category", "General")
             employee_id = st.number_input("Assign to Employee ID", min_value=1, step=1)
