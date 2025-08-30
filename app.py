@@ -23,6 +23,19 @@ def init_db():
     );
     """)
 
+    # Insert sample users if table empty
+    cur.execute("SELECT COUNT(*) FROM Users")
+    if cur.fetchone()[0] == 0:
+        cur.executemany("""
+        INSERT INTO Users (username, password, role)
+        VALUES (?, ?, ?)
+        """, [
+            ("sameer", "12345", "Admin"),
+            ("arnav", "abcde", "Manager"),
+            ("user1", "user123", "User"),
+            ("user2", "userabc", "User"),
+        ])
+    
     # Tasks table
     cur.execute("""
     CREATE TABLE IF NOT EXISTS Tasks (
@@ -55,6 +68,9 @@ def init_db():
 
     conn.commit()
 
+# ========================
+# HELPER FUNCTIONS
+# ========================
 def validate_user(username, password):
     conn = get_db()
     cur = conn.cursor()
