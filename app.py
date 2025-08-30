@@ -32,7 +32,7 @@ def get_tasks(role, employee_id, filter_status=None, search_keyword=None):
     query = "SELECT task_id, employee_id, title, description, due_datetime, status, priority, category FROM Tasks"
     params = []
 
-    if role == "User":  # User can only see their own tasks
+    if role == "User":
         query += " WHERE employee_id=?"
         params.append(employee_id)
     else:
@@ -58,10 +58,25 @@ def update_task_status(task_id, status):
     conn.commit()
     conn.close()
 
+def add_comment(task_id, employee_id, comment):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("INSERT INTO Comments (task_id, employee_id, comment, timestamp) VALUES (?, ?, ?, ?)",
+                (task_id, employee_id, comment, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+    conn.commit()
+    conn.close()
+
+def get_comments(task_id):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT employee_id, comment, timestamp FROM Comments WHERE task_id=? ORDER BY timestamp DESC", (task_id,))
+    rows = cur.fetchall()
+    conn.close()
+    return rows
+
 # -------------------- STREAMLIT APP --------------------
 st.set_page_config(page_title="Task Management System", layout="wide")
 
-# Initialize session state
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 if "employee_id" not in st.session_state:
@@ -97,7 +112,6 @@ else:
     role = st.session_state.role
     employee_id = st.session_state.employee_id
 
-    # -------------------- MAIN DASHBOARD --------------------
     st.title("📋 Task Management Dashboard")
 
     menu = ["View Tasks"]
@@ -126,38 +140,60 @@ else:
 
     # -------------------- VIEW TASKS --------------------
     elif choice == "View Tasks":
-        st.subheader("📌 Task List")
+        tab1, tab2, tab3 = st.tabs(["📌 All Tasks", "❌ Overdue Tasks", "⚠️ Due in <24h"])
 
-        # Filters
-        filter_status = st.selectbox("Filter by Status", ["All", "Pending", "Completed"], index=0)
-        search_keyword = st.text_input("🔍 Search by keyword")
+        tasks = get_tasks(role, employee_id)
 
-        status_filter = None if filter_status == "All" else filter_status
-        tasks = get_tasks(role, employee_id, filter_status=status_filter, search_keyword=search_keyword)
+        # Helper to render tasks
+        def render_task(t):
+            task_id, emp_id, title, desc, due_dt, status, priority, category = t
+            due_dt = datetime.strptime(due_dt, "%Y-%m-%d %H:%M:%S")
 
-        if tasks:
+            with st.expander(f"📌 {title} (Assigned to: {emp_id})"):
+                st.write(f"**Description:** {desc}")
+                st.write(f"**Due:** {due_dt.strftime('%d-%m-%Y %H:%M')}")
+                st.write(f"**Priority:** {priority}")
+                st.write(f"**Category:** {category}")
+                st.write(f"**Status:** {status}")
+
+                if role in ["Admin", "Manager"] or emp_id == employee_id:
+                    if st.button(f"Mark as Completed ✅ (Task {task_id})"):
+                        update_task_status(task_id, "Completed")
+                        st.success(f"Task {task_id} marked as Completed!")
+                        st.rerun()
+
+                # Comments Section
+                st.markdown("### 💬 Comments / Follow-up")
+                comments = get_comments(task_id)
+                if comments:
+                    for c in comments:
+                        st.info(f"[{c[2]}] 👤 {c[0]}: {c[1]}")
+                new_comment = st.text_input(f"Add comment for Task {task_id}", key=f"cmt_{task_id}")
+                if st.button(f"Add Comment (Task {task_id})"):
+                    if new_comment.strip():
+                        add_comment(task_id, employee_id, new_comment.strip())
+                        st.success("Comment added!")
+                        st.rerun()
+
+        # All Tasks
+        with tab1:
             for t in tasks:
-                task_id, emp_id, title, desc, due_dt, status, priority, category = t
-                due_dt = datetime.strptime(due_dt, "%Y-%m-%d %H:%M:%S")
+                render_task(t)
 
-                # Highlight overdue and due in <24h
-                if status == "Pending":
-                    if due_dt < datetime.now():
-                        status = "❌ Overdue"
-                    elif due_dt < datetime.now() + timedelta(hours=24):
-                        status = "⚠️ Due in <24h"
+        # Overdue Tasks
+        with tab2:
+            overdue = [t for t in tasks if datetime.strptime(t[4], "%Y-%m-%d %H:%M:%S") < datetime.now() and t[5] == "Pending"]
+            if overdue:
+                for t in overdue:
+                    render_task(t)
+            else:
+                st.info("No overdue tasks.")
 
-                with st.expander(f"📌 {title} (Assigned to: {emp_id})"):
-                    st.write(f"**Description:** {desc}")
-                    st.write(f"**Due:** {due_dt.strftime('%d-%m-%Y %H:%M')}")
-                    st.write(f"**Priority:** {priority}")
-                    st.write(f"**Category:** {category}")
-                    st.write(f"**Status:** {status}")
-
-                    if role in ["Admin", "Manager"] or emp_id == employee_id:
-                        if st.button(f"Mark as Completed ✅ (Task {task_id})"):
-                            update_task_status(task_id, "Completed")
-                            st.success(f"Task {task_id} marked as Completed!")
-                            st.rerun()
-        else:
-            st.info("No tasks found.")
+        # Due in <24h
+        with tab3:
+            urgent = [t for t in tasks if datetime.now() <= datetime.strptime(t[4], "%Y-%m-%d %H:%M:%S") < datetime.now() + timedelta(hours=24) and t[5] == "Pending"]
+            if urgent:
+                for t in urgent:
+                    render_task(t)
+            else:
+                st.info("No tasks due in the next 24 hours.")
