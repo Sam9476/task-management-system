@@ -23,7 +23,7 @@ def init_db():
     );
     """)
 
-    # Insert sample users if table empty
+    # Sample users
     cur.execute("SELECT COUNT(*) FROM Users")
     if cur.fetchone()[0] == 0:
         cur.executemany("""
@@ -35,7 +35,7 @@ def init_db():
             ("user1", "user123", "User"),
             ("user2", "userabc", "User"),
         ])
-    
+
     # Tasks table
     cur.execute("""
     CREATE TABLE IF NOT EXISTS Tasks (
@@ -59,13 +59,12 @@ def init_db():
         comment_id INTEGER PRIMARY KEY AUTOINCREMENT,
         task_id INTEGER,
         employee_id INTEGER,
-        comment TEXT,
+        comment_text TEXT,
         timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (task_id) REFERENCES Tasks(task_id),
         FOREIGN KEY (employee_id) REFERENCES Users(employee_id)
     );
     """)
-
     conn.commit()
 
 # ========================
@@ -118,17 +117,17 @@ def get_due_soon_tasks():
           (datetime.now() + timedelta(hours=24)).strftime("%Y-%m-%d %H:%M:%S")))
     return cur.fetchall()
 
-def add_comment(task_id, employee_id, comment):
+def add_comment(task_id, employee_id, comment_text):
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("INSERT INTO Comments (task_id, employee_id, comment) VALUES (?,?,?)", (task_id, employee_id, comment))
+    cur.execute("INSERT INTO Comments (task_id, employee_id, comment_text) VALUES (?,?,?)", (task_id, employee_id, comment_text))
     conn.commit()
 
 def get_comments(task_id):
     conn = get_db()
     cur = conn.cursor()
     cur.execute("""
-        SELECT employee_id, comment, timestamp
+        SELECT employee_id, comment_text, timestamp
         FROM Comments WHERE task_id=? ORDER BY timestamp DESC
     """, (task_id,))
     return cur.fetchall()
@@ -152,7 +151,7 @@ if not st.session_state.user:
         user = validate_user(username, password)
         if user:
             st.session_state.user = {"employee_id": user[0], "role": user[1], "username": username}
-            st.rerun()
+            st.experimental_rerun()
         else:
             st.error("Invalid username or password")
 
@@ -160,15 +159,15 @@ else:
     st.sidebar.title(f"Welcome, {st.session_state.user['username']} ({st.session_state.user['role']})")
     if st.sidebar.button("Logout"):
         st.session_state.user = None
-        st.rerun()
+        st.experimental_rerun()
 
-    # Tabs
-    tab1, tab2, tab3 = st.tabs(["📋 All Tasks", "⚠️ Overdue & Due Soon", "➕ Create Task"])
+    # Sidebar menu instead of tabs
+    menu = st.sidebar.radio("Menu", ["📋 All Tasks", "⚠️ Overdue & Due Soon", "➕ Create Task"])
 
     # -----------------
-    # TAB 1: All Tasks
+    # ALL TASKS
     # -----------------
-    with tab1:
+    if menu == "📋 All Tasks":
         st.subheader("📋 All Tasks")
         tasks = get_all_tasks()
         for t in tasks:
@@ -185,36 +184,32 @@ else:
             if st.button(f"Add Comment {t[0]}", key=f"b{t[0]}"):
                 if new_comment.strip():
                     add_comment(t[0], st.session_state.user["employee_id"], new_comment)
-                    st.rerun()
+                    st.experimental_rerun()
 
     # -----------------
-    # TAB 2: Overdue & Due Soon
+    # OVERDUE & DUE SOON
     # -----------------
-    with tab2:
-        col1, col2 = st.columns(2)
+    elif menu == "⚠️ Overdue & Due Soon":
+        st.subheader("⚠️ Overdue Tasks")
+        overdue = get_overdue_tasks()
+        if overdue:
+            for t in overdue:
+                st.error(f"{t[1]} (Due: {t[3]}) | Assigned To: {t[7]}")
+        else:
+            st.info("No overdue tasks.")
 
-        with col1:
-            st.subheader("⚠️ Overdue Tasks")
-            overdue = get_overdue_tasks()
-            if overdue:
-                for t in overdue:
-                    st.error(f"{t[1]} (Due: {t[3]}) | Assigned To: {t[7]}")
-            else:
-                st.info("No overdue tasks.")
-
-        with col2:
-            st.subheader("⏳ Due in Next 24 Hours")
-            due_soon = get_due_soon_tasks()
-            if due_soon:
-                for t in due_soon:
-                    st.warning(f"{t[1]} (Due: {t[3]}) | Assigned To: {t[7]}")
-            else:
-                st.info("No tasks due in next 24 hours.")
+        st.subheader("⏳ Due in Next 24 Hours")
+        due_soon = get_due_soon_tasks()
+        if due_soon:
+            for t in due_soon:
+                st.warning(f"{t[1]} (Due: {t[3]}) | Assigned To: {t[7]}")
+        else:
+            st.info("No tasks due in next 24 hours.")
 
     # -----------------
-    # TAB 3: Create Task
+    # CREATE TASK
     # -----------------
-    with tab3:
+    elif menu == "➕ Create Task":
         if st.session_state.user["role"] in ["Admin", "Manager"]:
             st.subheader("➕ Create New Task")
             employee_id = st.number_input("Assign To (Employee ID)", min_value=1)
