@@ -2,6 +2,7 @@ import streamlit as st
 import sqlite3
 import pandas as pd
 from datetime import datetime, timedelta
+import time  # for delay before rerun
 
 # --------------------------
 # Database Connection
@@ -144,15 +145,16 @@ else:
             st.info("No tasks found.")
 
         # --------------------------
-        # Mark Task Complete (only for assigned users, not Admin/Manager)
+        # Mark Task Complete (only for assigned users)
         # --------------------------
         if user[3] not in ["Admin", "Manager"] and tasks:
             st.subheader("✅ Mark Task as Completed")
             task_id_to_complete = st.number_input("Enter Task ID to mark complete", min_value=1, step=1)
             if st.button("Mark as Complete"):
                 if mark_task_complete(task_id_to_complete, user):
-                    st.rerun()
                     st.success(f"✅ Task ID {task_id_to_complete} marked as Completed successfully!")
+                    time.sleep(1.5)  # wait 1.5 sec so user can see the message
+                    st.experimental_rerun()
                 else:
                     st.error("❌ You are not authorized to mark this task complete or task does not exist.")
 
@@ -164,8 +166,9 @@ else:
             task_id_to_delete = st.number_input("Enter Task ID to delete", min_value=1, step=1, key="delete_task")
             if st.button("Delete Task"):
                 if delete_task(task_id_to_delete, user):
-                    st.rerun()
                     st.success(f"🗑️ Task ID {task_id_to_delete} deleted successfully!")
+                    time.sleep(1.5)  # wait 1.5 sec so user can see the message
+                    st.experimental_rerun()
                 else:
                     st.error("❌ Task does not exist or you are not authorized to delete it.")
 
@@ -198,8 +201,12 @@ else:
             title = st.text_input("Title")
             description = st.text_area("Description")
             due_date = st.date_input("Due Date")
+            due_time = st.time_input("Due Time")  # added time input
             priority = st.selectbox("Priority", ["Low", "Medium", "High"])
             category = st.text_input("Category", "General")
+            
+            # Combine date and time
+            due_datetime = datetime.combine(due_date, due_time)
             
             # Select assignable user (exclude current logged-in user)
             cursor.execute("SELECT user_id, username FROM Users WHERE user_id != ?", (user[0],))
@@ -210,12 +217,13 @@ else:
                 assign_to = [u[0] for u in users_list if u[1] == assign_to_name][0]
 
                 if st.button("Add Task"):
-                    if add_task(user, title, description, due_date, priority, category, assign_to):
+                    if add_task(user, title, description, due_datetime, priority, category, assign_to):
                         st.success("✅ Task added successfully!")
+                        time.sleep(1.5)
+                        st.experimental_rerun()
                     else:
                         st.error("❌ You are not authorized to create tasks.")
             else:
                 st.warning("No other users available to assign.")
         else:
             st.info("Only Admin or Manager can create tasks.")
-
