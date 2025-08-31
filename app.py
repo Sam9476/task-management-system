@@ -103,6 +103,7 @@ if "user" not in st.session_state:
         if user:
             st.session_state.user = user
             st.success(f"Logged in as {user[1]} ({user[3]})")
+            st.rerun()  # redirect into app immediately after login
         else:
             st.error("Invalid credentials")
 
@@ -112,12 +113,12 @@ else:
     menu = st.sidebar.selectbox("Menu", ["View Tasks", "Overdue & Today Tasks", "Create Task", "Logout"])
 
     # --------------------------
-    # Logout
+    # Logout (fixed)
     # --------------------------
     if menu == "Logout":
-        del st.session_state["user"]
+        st.session_state.clear()
+        st.success("You have been logged out.")
         st.rerun()
-
 
     # --------------------------
     # View Tasks
@@ -188,6 +189,6 @@ else:
         if st.button("Mark as Complete"):
             if mark_task_complete(task_id_to_complete, user):
                 st.success("Task marked as Completed ✅")
+                st.rerun()
             else:
                 st.error("You are not authorized to mark this task complete.")
-
