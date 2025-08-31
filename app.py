@@ -151,8 +151,8 @@ else:
             task_id_to_complete = st.number_input("Enter Task ID to mark complete", min_value=1, step=1)
             if st.button("Mark as Complete"):
                 if mark_task_complete(task_id_to_complete, user):
-                    st.success(f"✅ Task ID {task_id_to_complete} marked as Completed successfully!")
                     st.rerun()
+                    st.success(f"✅ Task ID {task_id_to_complete} marked as Completed successfully!")
                 else:
                     st.error("❌ You are not authorized to mark this task complete or task does not exist.")
 
@@ -164,8 +164,8 @@ else:
             task_id_to_delete = st.number_input("Enter Task ID to delete", min_value=1, step=1, key="delete_task")
             if st.button("Delete Task"):
                 if delete_task(task_id_to_delete, user):
-                    st.success(f"🗑️ Task ID {task_id_to_delete} deleted successfully!")
                     st.rerun()
+                    st.success(f"🗑️ Task ID {task_id_to_delete} deleted successfully!")
                 else:
                     st.error("❌ Task does not exist or you are not authorized to delete it.")
 
@@ -218,3 +218,4 @@ else:
                 st.warning("No other users available to assign.")
         else:
             st.info("Only Admin or Manager can create tasks.")
+
