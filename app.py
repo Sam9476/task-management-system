@@ -48,8 +48,8 @@ def add_task(creator, title, description, due_date, priority, category, assign_t
 
 def mark_task_complete(task_id, user):
     cursor.execute("SELECT assigned_to FROM Tasks WHERE task_id=?", (task_id,))
-    assigned_to = cursor.fetchone()[0]
-    if user[0] == assigned_to:
+    result = cursor.fetchone()
+    if result and user[0] == result[0]:
         cursor.execute("UPDATE Tasks SET status='Completed' WHERE task_id=?", (task_id,))
         conn.commit()
         return True
@@ -57,9 +57,13 @@ def mark_task_complete(task_id, user):
 
 def delete_task(task_id, user):
     if user[3] in ["Admin", "Manager"]:
-        cursor.execute("DELETE FROM Tasks WHERE task_id=?", (task_id,))
-        conn.commit()
-        return True
+        cursor.execute("SELECT * FROM Tasks WHERE task_id=?", (task_id,))
+        if cursor.fetchone():
+            cursor.execute("DELETE FROM Tasks WHERE task_id=?", (task_id,))
+            conn.commit()
+            return True
+        else:
+            return False
     return False
 
 def get_overdue_and_today_tasks(user):
@@ -147,10 +151,10 @@ else:
             task_id_to_complete = st.number_input("Enter Task ID to mark complete", min_value=1, step=1)
             if st.button("Mark as Complete"):
                 if mark_task_complete(task_id_to_complete, user):
-                    st.success(f"Task ID {task_id_to_complete} marked as Completed ✅")
+                    st.success(f"✅ Task ID {task_id_to_complete} marked as Completed successfully!")
                     st.rerun()
                 else:
-                    st.error("You are not authorized to mark this task complete.")
+                    st.error("❌ You are not authorized to mark this task complete or task does not exist.")
 
         # --------------------------
         # Delete Task for Admin/Manager
@@ -160,10 +164,10 @@ else:
             task_id_to_delete = st.number_input("Enter Task ID to delete", min_value=1, step=1, key="delete_task")
             if st.button("Delete Task"):
                 if delete_task(task_id_to_delete, user):
-                    st.success(f"Task ID {task_id_to_delete} deleted successfully 🗑️")
+                    st.success(f"🗑️ Task ID {task_id_to_delete} deleted successfully!")
                     st.rerun()
                 else:
-                    st.error("You are not authorized to delete this task.")
+                    st.error("❌ Task does not exist or you are not authorized to delete it.")
 
     # --------------------------
     # Overdue & Today Tasks
@@ -207,9 +211,9 @@ else:
 
                 if st.button("Add Task"):
                     if add_task(user, title, description, due_date, priority, category, assign_to):
-                        st.success("Task added successfully!")
+                        st.success("✅ Task added successfully!")
                     else:
-                        st.error("You are not authorized to create tasks.")
+                        st.error("❌ You are not authorized to create tasks.")
             else:
                 st.warning("No other users available to assign.")
         else:
