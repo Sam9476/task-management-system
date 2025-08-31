@@ -36,7 +36,6 @@ def get_tasks(user):
     return cursor.fetchall()
 
 def add_task(creator, title, description, due_date, priority, category, assign_to):
-    # Only Admin/Manager can assign tasks
     if creator[3] in ["Admin", "Manager"]:
         cursor.execute("""
             INSERT INTO Tasks (title, description, due_date, status, priority, category, assigned_to, created_by)
@@ -48,7 +47,6 @@ def add_task(creator, title, description, due_date, priority, category, assign_t
         return False
 
 def mark_task_complete(task_id, user):
-    # Only assigned user can mark complete
     cursor.execute("SELECT assigned_to FROM Tasks WHERE task_id=?", (task_id,))
     assigned_to = cursor.fetchone()[0]
     if user[0] == assigned_to:
@@ -57,9 +55,15 @@ def mark_task_complete(task_id, user):
         return True
     return False
 
+def delete_task(task_id, user):
+    if user[3] in ["Admin", "Manager"]:
+        cursor.execute("DELETE FROM Tasks WHERE task_id=?", (task_id,))
+        conn.commit()
+        return True
+    return False
+
 def get_overdue_and_today_tasks(user):
     today = datetime.today().date()
-    # Overdue tasks
     if user[3] in ["Admin", "Manager"]:
         cursor.execute("""
             SELECT t.task_id, t.title, t.due_date, t.status, u.username
@@ -103,7 +107,7 @@ if "user" not in st.session_state:
         if user:
             st.session_state.user = user
             st.success(f"Logged in as {user[1]} ({user[3]})")
-            st.rerun()  # redirect into app immediately after login
+            st.rerun()
         else:
             st.error("Invalid credentials")
 
@@ -113,7 +117,7 @@ else:
     menu = st.sidebar.selectbox("Menu", ["View Tasks", "Overdue & Today Tasks", "Create Task", "Logout"])
 
     # --------------------------
-    # Logout (fixed)
+    # Logout
     # --------------------------
     if menu == "Logout":
         st.session_state.clear()
@@ -197,3 +201,16 @@ else:
                 st.rerun()
             else:
                 st.error("You are not authorized to mark this task complete.")
+
+        # --------------------------
+        # Delete Task for Admin/Manager
+        # --------------------------
+        if user[3] in ["Admin", "Manager"]:
+            st.subheader("🗑️ Delete Task")
+            task_id_to_delete = st.number_input("Enter Task ID to delete", min_value=1, step=1, key="delete_task")
+            if st.button("Delete Task"):
+                if delete_task(task_id_to_delete, user):
+                    st.success("Task deleted successfully 🗑️")
+                    st.rerun()
+                else:
+                    st.error("You are not authorized to delete this task.")
