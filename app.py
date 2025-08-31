@@ -15,7 +15,7 @@ cursor = conn.cursor()
 def login_user(username, password):
     cursor.execute("SELECT * FROM Users WHERE username=? AND password=?", (username, password))
     user = cursor.fetchone()
-    return user
+    return user  # None if not found
 
 def get_tasks(user):
     if user[3] in ["Admin", "Manager"]:
@@ -43,25 +43,31 @@ def add_task(creator, title, description, due_date, priority, category, assign_t
         """, (title, description, due_date, "Pending", priority, category, assign_to, creator[0]))
         conn.commit()
         return True
-    return False
+    else:
+        return False
 
 def mark_task_complete(task_id, user):
-    cursor.execute("SELECT assigned_to FROM Tasks WHERE task_id=?", (task_id,))
-    assigned_to = cursor.fetchone()
-    if assigned_to and user[0] == assigned_to[0]:
-        cursor.execute("UPDATE Tasks SET status='Completed' WHERE task_id=?", (task_id,))
-        conn.commit()
-        return True
-    return False
+    cursor.execute("SELECT assigned_to, status FROM Tasks WHERE task_id=?", (task_id,))
+    result = cursor.fetchone()
+    if result:
+        assigned_to, status = result
+        if user[0] == assigned_to:
+            if status == "Completed":
+                return "already_completed"
+            cursor.execute("UPDATE Tasks SET status='Completed' WHERE task_id=?", (task_id,))
+            conn.commit()
+            return "completed"
+    return "unauthorized"
 
 def delete_task(task_id, user):
     if user[3] in ["Admin", "Manager"]:
         cursor.execute("SELECT * FROM Tasks WHERE task_id=?", (task_id,))
-        task_exists = cursor.fetchone()
-        if task_exists:
+        if cursor.fetchone():
             cursor.execute("DELETE FROM Tasks WHERE task_id=?", (task_id,))
             conn.commit()
             return True
+        else:
+            return "not_found"
     return False
 
 def get_overdue_and_today_tasks(user):
@@ -141,6 +147,38 @@ else:
         else:
             st.info("No tasks found.")
 
+        # --------------------------
+        # Mark Task Complete (only for assigned user)
+        # --------------------------
+        if tasks:
+            st.subheader("✅ Mark Task as Completed")
+            task_id_to_complete = st.number_input("Enter Task ID to mark complete", min_value=1, step=1)
+            if st.button("Mark as Complete"):
+                result = mark_task_complete(task_id_to_complete, user)
+                if result == "completed":
+                    st.success("Task marked as Completed ✅")
+                    st.rerun()
+                elif result == "already_completed":
+                    st.info("Task is already completed.")
+                else:
+                    st.error("You are not authorized to mark this task complete.")
+
+        # --------------------------
+        # Delete Task for Admin/Manager
+        # --------------------------
+        if user[3] in ["Admin", "Manager"]:
+            st.subheader("🗑️ Delete Task")
+            task_id_to_delete = st.number_input("Enter Task ID to delete", min_value=1, step=1, key="delete_task")
+            if st.button("Delete Task"):
+                result = delete_task(task_id_to_delete, user)
+                if result == True:
+                    st.success("Task deleted successfully 🗑️")
+                    st.rerun()
+                elif result == "not_found":
+                    st.warning("Task ID not found.")
+                else:
+                    st.error("You are not authorized to delete this task.")
+
     # --------------------------
     # Overdue & Today Tasks
     # --------------------------
@@ -173,6 +211,7 @@ else:
             priority = st.selectbox("Priority", ["Low", "Medium", "High"])
             category = st.text_input("Category", "General")
             
+            # Select assignable user (exclude current logged-in user)
             cursor.execute("SELECT user_id, username FROM Users WHERE user_id != ?", (user[0],))
             users_list = cursor.fetchall()
             
@@ -189,35 +228,3 @@ else:
                 st.warning("No other users available to assign.")
         else:
             st.info("Only Admin or Manager can create tasks.")
-
-    # --------------------------
-    # Mark Task Complete in View Tasks
-    # --------------------------
-    if menu == "View Tasks" and tasks:
-        # Only assigned user can mark complete
-        assigned_tasks = [t[0] for t in tasks if t[7] == user[1]]  # Task IDs assigned to this user
-        if assigned_tasks:
-            st.subheader("✅ Mark Task as Completed")
-            task_id_to_complete = st.number_input("Enter Task ID to mark complete", min_value=1, step=1, key="complete_task")
-            if st.button("Mark as Complete"):
-                if task_id_to_complete in assigned_tasks:
-                    if mark_task_complete(task_id_to_complete, user):
-                        st.success(f"Task {task_id_to_complete} marked as Completed ✅")
-                        st.experimental_rerun()
-                    else:
-                        st.error("Error marking task as complete.")
-                else:
-                    st.error("You are not authorized to mark this task complete.")
-
-        # --------------------------
-        # Delete Task for Admin/Manager
-        # --------------------------
-        if user[3] in ["Admin", "Manager"]:
-            st.subheader("🗑️ Delete Task")
-            task_id_to_delete = st.number_input("Enter Task ID to delete", min_value=1, step=1, key="delete_task")
-            if st.button("Delete Task"):
-                if delete_task(task_id_to_delete, user):
-                    st.success(f"Task {task_id_to_delete} deleted successfully 🗑️")
-                    st.experimental_rerun()
-                else:
-                    st.error("Task does not exist or you are not authorized to delete it.")
