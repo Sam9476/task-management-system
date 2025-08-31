@@ -2,6 +2,7 @@ import streamlit as st
 import sqlite3
 import pandas as pd
 from datetime import datetime, timedelta
+import time  # <- needed for sleep
 
 # --------------------------
 # Database Connection
@@ -14,7 +15,8 @@ cursor = conn.cursor()
 # --------------------------
 def login_user(username, password):
     cursor.execute("SELECT * FROM Users WHERE username=? AND password=?", (username, password))
-    return cursor.fetchone()  # None if not found
+    user = cursor.fetchone()
+    return user  # None if not found
 
 def get_tasks(user):
     if user[3] in ["Admin", "Manager"]:
@@ -42,7 +44,8 @@ def add_task(creator, title, description, due_date, priority, category, assign_t
         """, (title, description, due_date, "Pending", priority, category, assign_to, creator[0]))
         conn.commit()
         return True
-    return False
+    else:
+        return False
 
 def mark_task_complete(task_id, user):
     cursor.execute("SELECT assigned_to FROM Tasks WHERE task_id=?", (task_id,))
@@ -60,7 +63,8 @@ def delete_task(task_id, user):
             cursor.execute("DELETE FROM Tasks WHERE task_id=?", (task_id,))
             conn.commit()
             return True
-        return False
+        else:
+            return False
     return False
 
 def get_overdue_and_today_tasks(user):
@@ -108,7 +112,7 @@ if "user" not in st.session_state:
         if user:
             st.session_state.user = user
             st.success(f"Logged in as {user[1]} ({user[3]})")
-            st.experimental_rerun()
+            st.rerun()
         else:
             st.error("Invalid credentials")
 
@@ -123,7 +127,7 @@ else:
     if menu == "Logout":
         st.session_state.clear()
         st.success("You have been logged out.")
-        st.experimental_rerun()
+        st.rerun()
 
     # --------------------------
     # View Tasks
@@ -140,27 +144,33 @@ else:
         else:
             st.info("No tasks found.")
 
-        message_placeholder = st.empty()  # Placeholder for messages
-
-        # Mark Task Complete
+        # --------------------------
+        # Mark Task Complete (only for assigned users, not Admin/Manager)
+        # --------------------------
         if user[3] not in ["Admin", "Manager"] and tasks:
             st.subheader("✅ Mark Task as Completed")
             task_id_to_complete = st.number_input("Enter Task ID to mark complete", min_value=1, step=1)
             if st.button("Mark as Complete"):
                 if mark_task_complete(task_id_to_complete, user):
-                    message_placeholder.success(f"✅ Task ID {task_id_to_complete} marked as Completed successfully!")
+                    st.success(f"✅ Task ID {task_id_to_complete} marked as Completed successfully!")
+                    time.sleep(1.5)
+                    st.rerun()
                 else:
-                    message_placeholder.error("❌ You are not authorized to mark this task complete or task does not exist.")
+                    st.error("❌ You are not authorized to mark this task complete or task does not exist.")
 
+        # --------------------------
         # Delete Task for Admin/Manager
+        # --------------------------
         if user[3] in ["Admin", "Manager"] and tasks:
             st.subheader("🗑️ Delete Task")
             task_id_to_delete = st.number_input("Enter Task ID to delete", min_value=1, step=1, key="delete_task")
             if st.button("Delete Task"):
                 if delete_task(task_id_to_delete, user):
-                    message_placeholder.success(f"🗑️ Task ID {task_id_to_delete} deleted successfully!")
+                    st.success(f"🗑️ Task ID {task_id_to_delete} deleted successfully!")
+                    time.sleep(1.5)
+                    st.rerun()
                 else:
-                    message_placeholder.error("❌ Task does not exist or you are not authorized to delete it.")
+                    st.error("❌ Task does not exist or you are not authorized to delete it.")
 
     # --------------------------
     # Overdue & Today Tasks
@@ -183,7 +193,7 @@ else:
             st.info("No tasks due today.")
 
     # --------------------------
-    # Create Task
+    # Create Task (with time input)
     # --------------------------
     elif menu == "Create Task":
         st.subheader("➕ Create Task")
@@ -191,7 +201,7 @@ else:
             title = st.text_input("Title")
             description = st.text_area("Description")
             due_date = st.date_input("Due Date")
-            due_time = st.time_input("Time")  # Added time input
+            due_time = st.time_input("Time")  # <- added time input
             priority = st.selectbox("Priority", ["Low", "Medium", "High"])
             category = st.text_input("Category", "General")
             
@@ -209,6 +219,8 @@ else:
                 if st.button("Add Task"):
                     if add_task(user, title, description, due_datetime, priority, category, assign_to):
                         st.success("✅ Task added successfully!")
+                        time.sleep(1.5)
+                        st.rerun()
                     else:
                         st.error("❌ You are not authorized to create tasks.")
             else:
