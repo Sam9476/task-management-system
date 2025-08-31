@@ -57,10 +57,15 @@ def mark_task_complete(task_id, user):
 
 def delete_task(task_id, user):
     if user[3] in ["Admin", "Manager"]:
-        cursor.execute("DELETE FROM Tasks WHERE task_id=?", (task_id,))
-        conn.commit()
-        return True
-    return False
+        cursor.execute("SELECT title FROM Tasks WHERE task_id=?", (task_id,))
+        task = cursor.fetchone()
+        if task:
+            cursor.execute("DELETE FROM Tasks WHERE task_id=?", (task_id,))
+            conn.commit()
+            return f"Task '{task[0]}' deleted successfully 🗑️"
+        else:
+            return "Task not found."
+    return "You are not authorized to delete this task."
 
 def get_overdue_and_today_tasks(user):
     today = datetime.today().date()
@@ -139,6 +144,32 @@ else:
         else:
             st.info("No tasks found.")
 
+        # --------------------------
+        # Mark Task Complete (only for assigned users)
+        # --------------------------
+        if user[3] not in ["Admin", "Manager"] and tasks:
+            st.subheader("✅ Mark Task as Completed")
+            task_id_to_complete = st.number_input("Enter Task ID to mark complete", min_value=1, step=1)
+            if st.button("Mark as Complete"):
+                if mark_task_complete(task_id_to_complete, user):
+                    st.success("Task marked as Completed ✅")
+                    st.rerun()
+                else:
+                    st.error("You are not authorized to mark this task complete.")
+
+        # --------------------------
+        # Delete Task for Admin/Manager
+        # --------------------------
+        if user[3] in ["Admin", "Manager"]:
+            st.subheader("🗑️ Delete Task")
+            task_id_to_delete = st.number_input("Enter Task ID to delete", min_value=1, step=1, key="delete_task")
+            if st.button("Delete Task"):
+                msg = delete_task(task_id_to_delete, user)
+                if "successfully" in msg:
+                    st.success(msg)
+                else:
+                    st.error(msg)
+
     # --------------------------
     # Overdue & Today Tasks
     # --------------------------
@@ -188,29 +219,3 @@ else:
                 st.warning("No other users available to assign.")
         else:
             st.info("Only Admin or Manager can create tasks.")
-
-    # --------------------------
-    # Mark Task Complete in View Tasks
-    # --------------------------
-    if menu == "View Tasks" and tasks:
-        st.subheader("✅ Mark Task as Completed")
-        task_id_to_complete = st.number_input("Enter Task ID to mark complete", min_value=1, step=1)
-        if st.button("Mark as Complete"):
-            if mark_task_complete(task_id_to_complete, user):
-                st.success("Task marked as Completed ✅")
-                st.rerun()
-            else:
-                st.error("You are not authorized to mark this task complete.")
-
-        # --------------------------
-        # Delete Task for Admin/Manager
-        # --------------------------
-        if user[3] in ["Admin", "Manager"]:
-            st.subheader("🗑️ Delete Task")
-            task_id_to_delete = st.number_input("Enter Task ID to delete", min_value=1, step=1, key="delete_task")
-            if st.button("Delete Task"):
-                if delete_task(task_id_to_delete, user):
-                    st.success("Task deleted successfully 🗑️")
-                    st.rerun()
-                else:
-                    st.error("You are not authorized to delete this task.")
