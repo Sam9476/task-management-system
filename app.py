@@ -2,7 +2,6 @@ import streamlit as st
 import sqlite3
 import pandas as pd
 from datetime import datetime, timedelta
-import time  # for delay before rerun
 
 # --------------------------
 # Database Connection
@@ -112,7 +111,7 @@ if "user" not in st.session_state:
         if user:
             st.session_state.user = user
             st.success(f"Logged in as {user[1]} ({user[3]})")
-            st.rerun()
+            st.experimental_rerun()
         else:
             st.error("Invalid credentials")
 
@@ -127,7 +126,7 @@ else:
     if menu == "Logout":
         st.session_state.clear()
         st.success("You have been logged out.")
-        st.rerun()
+        st.experimental_rerun()
 
     # --------------------------
     # View Tasks
@@ -152,11 +151,9 @@ else:
             task_id_to_complete = st.number_input("Enter Task ID to mark complete", min_value=1, step=1)
             if st.button("Mark as Complete"):
                 if mark_task_complete(task_id_to_complete, user):
-                    st.success(f"✅ Task ID {task_id_to_complete} marked as Completed successfully!")
-                    time.sleep(1.5)  # wait 1.5 sec so user can see the message
-                    st.experimental_rerun()
+                    st.session_state.show_msg = f"✅ Task ID {task_id_to_complete} marked as Completed successfully!"
                 else:
-                    st.error("❌ You are not authorized to mark this task complete or task does not exist.")
+                    st.session_state.show_msg = "❌ You are not authorized to mark this task complete or task does not exist."
 
         # --------------------------
         # Delete Task for Admin/Manager
@@ -166,11 +163,14 @@ else:
             task_id_to_delete = st.number_input("Enter Task ID to delete", min_value=1, step=1, key="delete_task")
             if st.button("Delete Task"):
                 if delete_task(task_id_to_delete, user):
-                    st.success(f"🗑️ Task ID {task_id_to_delete} deleted successfully!")
-                    time.sleep(1.5)  # wait 1.5 sec so user can see the message
-                    st.experimental_rerun()
+                    st.session_state.show_msg = f"🗑️ Task ID {task_id_to_delete} deleted successfully!"
                 else:
-                    st.error("❌ Task does not exist or you are not authorized to delete it.")
+                    st.session_state.show_msg = "❌ Task does not exist or you are not authorized to delete it."
+
+        # Display messages
+        if "show_msg" in st.session_state:
+            st.success(st.session_state.show_msg) if "successfully" in st.session_state.show_msg else st.error(st.session_state.show_msg)
+            st.session_state.show_msg = None  # reset message
 
     # --------------------------
     # Overdue & Today Tasks
@@ -201,12 +201,9 @@ else:
             title = st.text_input("Title")
             description = st.text_area("Description")
             due_date = st.date_input("Due Date")
-            due_time = st.time_input("Due Time")  # added time input
+            due_time = st.time_input("Time")  # new time input
             priority = st.selectbox("Priority", ["Low", "Medium", "High"])
             category = st.text_input("Category", "General")
-            
-            # Combine date and time
-            due_datetime = datetime.combine(due_date, due_time)
             
             # Select assignable user (exclude current logged-in user)
             cursor.execute("SELECT user_id, username FROM Users WHERE user_id != ?", (user[0],))
@@ -217,10 +214,10 @@ else:
                 assign_to = [u[0] for u in users_list if u[1] == assign_to_name][0]
 
                 if st.button("Add Task"):
+                    # combine date and time
+                    due_datetime = datetime.combine(due_date, due_time)
                     if add_task(user, title, description, due_datetime, priority, category, assign_to):
                         st.success("✅ Task added successfully!")
-                        time.sleep(1.5)
-                        st.experimental_rerun()
                     else:
                         st.error("❌ You are not authorized to create tasks.")
             else:
