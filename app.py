@@ -166,17 +166,22 @@ else:
             due_date = st.date_input("Due Date")
             priority = st.selectbox("Priority", ["Low", "Medium", "High"])
             category = st.text_input("Category", "General")
-            # Select assignable user
-            cursor.execute("SELECT user_id, username FROM Users")
+            
+            # Select assignable user (exclude current logged-in user)
+            cursor.execute("SELECT user_id, username FROM Users WHERE user_id != ?", (user[0],))
             users_list = cursor.fetchall()
-            assign_to_name = st.selectbox("Assign To", [u[1] for u in users_list])
-            assign_to = [u[0] for u in users_list if u[1] == assign_to_name][0]
+            
+            if users_list:
+                assign_to_name = st.selectbox("Assign To", [u[1] for u in users_list])
+                assign_to = [u[0] for u in users_list if u[1] == assign_to_name][0]
 
-            if st.button("Add Task"):
-                if add_task(user, title, description, due_date, priority, category, assign_to):
-                    st.success("Task added successfully!")
-                else:
-                    st.error("You are not authorized to create tasks.")
+                if st.button("Add Task"):
+                    if add_task(user, title, description, due_date, priority, category, assign_to):
+                        st.success("Task added successfully!")
+                    else:
+                        st.error("You are not authorized to create tasks.")
+            else:
+                st.warning("No other users available to assign.")
         else:
             st.info("Only Admin or Manager can create tasks.")
 
