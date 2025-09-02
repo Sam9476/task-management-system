@@ -122,8 +122,11 @@ def highlight_status(val):
 
 def format_datetime(dt):
     if isinstance(dt, str):
-        dt = datetime.fromisoformat(dt)
-    return dt.strftime("%d-%b-%Y %H:%M")
+        try:
+            dt = datetime.fromisoformat(dt)
+        except:
+            return dt
+    return dt.strftime("%d-%b-%Y %H:%M") if dt else ""
 
 # --------------------------
 # Streamlit App
@@ -140,7 +143,7 @@ if "user" not in st.session_state:
         if user:
             st.session_state.user = user
             st.success(f"✅ Logged in as {user[1]} ({user[3]})")
-            time.sleep(2)
+            time.sleep(1)
             st.rerun()
         else:
             st.error("❌ Invalid credentials")
@@ -159,13 +162,13 @@ else:
     if not df_tasks.empty:
         df_tasks['Due Date'] = pd.to_datetime(df_tasks['Due Date'], errors='coerce')
         today = datetime.today().date()
-        df_tasks.loc[df_tasks['Due Date'].dt.date < today, 'Status'] = 'Overdue'
+        df_tasks.loc[(df_tasks['Due Date'].dt.date < today) & (df_tasks['Status'] == 'Pending'), 'Status'] = 'Overdue'
 
     total_tasks = len(df_tasks)
     pending_count = df_tasks[df_tasks['Status'] == 'Pending'].shape[0]
     completed_count = df_tasks[df_tasks['Status'] == 'Completed'].shape[0]
     overdue_count = df_tasks[df_tasks['Status'] == 'Overdue'].shape[0]
-    today_count = df_tasks[df_tasks['Due Date'].dt.date == today].shape[0] if not df_tasks.empty else 0
+    today_count = df_tasks[df_tasks['Due Date'].dt.date == datetime.today().date()].shape[0] if not df_tasks.empty else 0
 
     st.sidebar.markdown("### 📝 Task Overview")
     st.sidebar.markdown(f"Total: **{total_tasks}**")
@@ -180,7 +183,7 @@ else:
     if menu == "Logout":
         st.session_state.clear()
         st.success("✅ You have been logged out.")
-        time.sleep(2)
+        time.sleep(1)
         st.rerun()
 
     # --- View Tasks ---
@@ -200,7 +203,7 @@ else:
             if st.button("Mark as Complete"):
                 if mark_task_complete(task_id_to_complete, user):
                     st.success(f"Task {task_id_to_complete} completed 🎉")
-                    time.sleep(2)
+                    time.sleep(1)
                     st.rerun()
                 else:
                     st.error("❌ Not authorized or task not found.")
@@ -210,15 +213,14 @@ else:
             st.subheader("🗑️ Delete Task")
             task_id_to_delete = st.number_input("Enter Task ID to delete", min_value=1, step=1, key="delete")
             if st.button("Delete Task"):
-                if st.checkbox("⚠️ Confirm delete"):
+                confirm = st.radio("⚠️ Confirm delete?", ["No", "Yes"], index=0, key="confirm_delete")
+                if confirm == "Yes":
                     if delete_task(task_id_to_delete, user):
                         st.success(f"🗑️ Task {task_id_to_delete} deleted successfully!")
-                        time.sleep(2)
+                        time.sleep(1)
                         st.rerun()
                     else:
                         st.error("❌ Task not found.")
-                else:
-                    st.warning("Please confirm deletion before proceeding.")
 
     # --- Overdue & Today Tasks ---
     elif menu == "Overdue & Today Tasks":
@@ -248,6 +250,7 @@ else:
     elif menu == "Create Task":
         st.subheader("➕ Create New Task")
         if user[3] in ["Admin", "Manager"]:
+
             title = st.text_input("Title *")
             description = st.text_area("Description *")
             due_date = st.date_input("Due Date *")
@@ -258,17 +261,18 @@ else:
 
             cursor.execute("SELECT user_id, username FROM Users WHERE user_id != ?", (user[0],))
             users_list = cursor.fetchall()
+
             if users_list:
                 assign_to_name = st.selectbox("Assign To *", [u[1] for u in users_list])
                 assign_to = [u[0] for u in users_list if u[1] == assign_to_name][0]
 
                 if st.button("Add Task"):
-                    if not title.strip() or not description.strip() or not due_date or not assign_to:
+                    if not title.strip() or not description.strip():
                         st.error("❌ All required fields must be filled.")
                     else:
                         if add_task(user, title, description, due_datetime, priority, category, assign_to):
                             st.success("✅ Task created successfully!")
-                            time.sleep(2)
+                            time.sleep(1)
                             st.rerun()
                         else:
                             st.error("❌ Not authorized.")
