@@ -36,7 +36,18 @@ def login_user(username, password):
     cursor.execute("SELECT * FROM Users WHERE username=? AND password=?", (username, password))
     return cursor.fetchone()
 
+def update_overdue_tasks():
+    """Update DB to mark overdue tasks automatically"""
+    today = datetime.today().date()
+    cursor.execute("""
+        UPDATE Tasks
+        SET status='Overdue'
+        WHERE date(due_date) < ? AND status='Pending'
+    """, (today,))
+    conn.commit()
+
 def get_tasks(user):
+    update_overdue_tasks()
     if user[3] in ["Admin", "Manager"]:
         cursor.execute("""
             SELECT t.task_id, t.title, t.description, t.due_date, t.status,
@@ -82,30 +93,31 @@ def delete_task(task_id, user):
 
 def get_overdue_and_today_tasks(user):
     today = datetime.today().date()
+    update_overdue_tasks()
     if user[3] in ["Admin", "Manager"]:
         cursor.execute("""
             SELECT t.task_id, t.title, t.due_date, t.status, u.username
             FROM Tasks t JOIN Users u ON t.assigned_to=u.user_id
-            WHERE t.due_date < ? AND t.status='Pending'
+            WHERE date(t.due_date) < ? AND t.status='Overdue'
         """, (today,))
         overdue = cursor.fetchall()
         cursor.execute("""
             SELECT t.task_id, t.title, t.due_date, t.status, u.username
             FROM Tasks t JOIN Users u ON t.assigned_to=u.user_id
-            WHERE t.due_date = ? AND t.status='Pending'
+            WHERE date(t.due_date) = ?
         """, (today,))
         today_tasks = cursor.fetchall()
     else:
         cursor.execute("""
             SELECT t.task_id, t.title, t.due_date, t.status, u.username
             FROM Tasks t JOIN Users u ON t.assigned_to=u.user_id
-            WHERE t.due_date < ? AND t.status='Pending' AND t.assigned_to=?
+            WHERE date(t.due_date) < ? AND t.status='Overdue' AND t.assigned_to=?
         """, (today, user[0]))
         overdue = cursor.fetchall()
         cursor.execute("""
             SELECT t.task_id, t.title, t.due_date, t.status, u.username
             FROM Tasks t JOIN Users u ON t.assigned_to=u.user_id
-            WHERE t.due_date = ? AND t.status='Pending' AND t.assigned_to=?
+            WHERE date(t.due_date) = ? AND t.assigned_to=?
         """, (today, user[0]))
         today_tasks = cursor.fetchall()
     return overdue, today_tasks
@@ -122,7 +134,10 @@ def highlight_status(val):
 
 def format_datetime(dt):
     if isinstance(dt, str):
-        dt = datetime.fromisoformat(dt)
+        try:
+            dt = datetime.fromisoformat(dt)
+        except ValueError:
+            return dt
     return dt.strftime("%d-%b-%Y %H:%M")
 
 # --------------------------
@@ -152,10 +167,11 @@ else:
     st.sidebar.header("📌 Navigation")
     st.sidebar.write(f"👤 {user[1]} ({user[3]})")
 
-    # Task overview
     tasks = get_tasks(user)
     df_tasks = pd.DataFrame(tasks, columns=["Task ID", "Title", "Description", "Due Date",
                                             "Status", "Priority", "Category", "Assigned To"])
+    df_tasks.dropna(how="all", inplace=True)
+
     total_tasks = len(df_tasks)
     pending_count = df_tasks[df_tasks['Status']=='Pending'].shape[0]
     completed_count = df_tasks[df_tasks['Status']=='Completed'].shape[0]
@@ -183,17 +199,15 @@ else:
     # --- View Tasks ---
     elif menu == "View Tasks":
         st.subheader("📋 All Tasks")
-        if tasks:
+        if not df_tasks.empty:
             df_tasks['Due Date'] = df_tasks['Due Date'].apply(format_datetime)
-            # Mark overdue dynamically
-            df_tasks.loc[pd.to_datetime(df_tasks['Due Date']).dt.date < today, 'Status'] = 'Overdue'
             styled_df = df_tasks.style.applymap(highlight_status, subset=["Status"])
             st.dataframe(styled_df, use_container_width=True, height=400)
         else:
             st.info("ℹ️ No tasks found.")
 
         # Mark complete
-        if user[3] not in ["Admin", "Manager"] and tasks:
+        if user[3] not in ["Admin", "Manager"] and not df_tasks.empty:
             st.subheader("✅ Mark Task as Completed")
             task_id_to_complete = st.number_input("Enter Task ID", min_value=1, step=1)
             if st.button("Mark as Complete"):
@@ -205,7 +219,7 @@ else:
                     st.error("❌ Not authorized or task not found.")
 
         # Delete task
-        if user[3] in ["Admin", "Manager"] and tasks:
+        if user[3] in ["Admin", "Manager"] and not df_tasks.empty:
             st.subheader("🗑️ Delete Task")
             task_id_to_delete = st.number_input("Enter Task ID to delete", min_value=1, step=1, key="delete")
             if st.button("Delete Task"):
@@ -224,7 +238,6 @@ else:
         st.markdown("### 🔴 Overdue Tasks")
         if overdue:
             df_overdue = pd.DataFrame(overdue, columns=["Task ID", "Title", "Due Date", "Status", "Assigned To"])
-            df_overdue['Status'] = 'Overdue'
             df_overdue['Due Date'] = df_overdue['Due Date'].apply(format_datetime)
             st.dataframe(df_overdue.style.applymap(highlight_status, subset=["Status"]),
                          use_container_width=True, height=250)
