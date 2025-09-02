@@ -62,6 +62,22 @@ def add_task(creator, title, description, due_date, priority, category, assign_t
         return True
     return False
 
+def update_task(task_id, user, title=None, description=None, due_date=None, priority=None, category=None):
+    if user[3] in ["Admin", "Manager"]:
+        updates = []
+        params = []
+        if title: updates.append("title=?"); params.append(title)
+        if description: updates.append("description=?"); params.append(description)
+        if due_date: updates.append("due_date=?"); params.append(due_date)
+        if priority: updates.append("priority=?"); params.append(priority)
+        if category: updates.append("category=?"); params.append(category)
+        params.append(task_id)
+        if updates:
+            cursor.execute(f"UPDATE Tasks SET {', '.join(updates)} WHERE task_id=?", params)
+            conn.commit()
+            return True
+    return False
+
 def mark_task_complete(task_id, user):
     cursor.execute("SELECT assigned_to FROM Tasks WHERE task_id=?", (task_id,))
     result = cursor.fetchone()
@@ -113,11 +129,11 @@ def get_overdue_and_today_tasks(user):
 # Styling for status badges
 def highlight_status(val):
     if val == "Pending":
-        return "background-color: #fde68a; color: black;"  # yellow
+        return "background-color: #fde68a; color: black;"
     elif val == "Completed":
-        return "background-color: #86efac; color: black;"  # green
+        return "background-color: #86efac; color: black;"
     elif val == "Overdue":
-        return "background-color: #fca5a5; color: black;"  # red
+        return "background-color: #fca5a5; color: black;"
     return ""
 
 def format_datetime(dt):
@@ -160,7 +176,6 @@ else:
     pending_count = df_tasks[df_tasks['Status']=='Pending'].shape[0]
     completed_count = df_tasks[df_tasks['Status']=='Completed'].shape[0]
     overdue_count = df_tasks[df_tasks['Status']=='Overdue'].shape[0]
-
     today = datetime.today().date()
     today_count = df_tasks[pd.to_datetime(df_tasks['Due Date']).dt.date==today].shape[0]
 
@@ -171,7 +186,10 @@ else:
     st.sidebar.markdown(f"🔴 Overdue: **{overdue_count}**")
     st.sidebar.markdown(f"🟡 Due Today: **{today_count}**")
 
-    menu = st.sidebar.radio("Go to", ["View Tasks", "Overdue & Today Tasks", "Create Task", "Logout"])
+    menu = st.sidebar.radio("Go to", [
+        "View Tasks", "Overdue & Today Tasks", "Create Task", "Update Task", 
+        "Ask Follow-up Question", "Logout"
+    ])
 
     # Logout
     if menu == "Logout":
@@ -185,10 +203,9 @@ else:
         st.subheader("📋 All Tasks")
         if tasks:
             df_tasks['Due Date'] = df_tasks['Due Date'].apply(format_datetime)
-            # Mark overdue dynamically
             df_tasks.loc[pd.to_datetime(df_tasks['Due Date']).dt.date < today, 'Status'] = 'Overdue'
-            styled_df = df_tasks.style.applymap(highlight_status, subset=["Status"])
-            st.dataframe(styled_df, use_container_width=True, height=400)
+            st.dataframe(df_tasks.style.applymap(highlight_status, subset=["Status"]),
+                         use_container_width=True, height=400)
         else:
             st.info("ℹ️ No tasks found.")
 
@@ -220,7 +237,6 @@ else:
     elif menu == "Overdue & Today Tasks":
         st.subheader("⚠️ Deadlines Overview")
         overdue, today_tasks = get_overdue_and_today_tasks(user)
-
         st.markdown("### 🔴 Overdue Tasks")
         if overdue:
             df_overdue = pd.DataFrame(overdue, columns=["Task ID", "Title", "Due Date", "Status", "Assigned To"])
@@ -269,3 +285,35 @@ else:
                 st.warning("No users available to assign.")
         else:
             st.info("Only Admin/Manager can create tasks.")
+
+    # --- Update Task ---
+    elif menu == "Update Task":
+        st.subheader("✏️ Update Existing Task")
+        if user[3] in ["Admin", "Manager"] and tasks:
+            task_id_to_update = st.number_input("Enter Task ID to update", min_value=1, step=1)
+            title = st.text_input("New Title (leave blank to keep unchanged)")
+            description = st.text_area("New Description (leave blank to keep unchanged)")
+            due_date = st.date_input("New Due Date (optional)")
+            due_time = st.time_input("New Time (optional)")
+            priority = st.selectbox("New Priority", ["", "Low", "Medium", "High"])
+            category = st.text_input("New Category (leave blank to keep unchanged)")
+            new_datetime = None
+            if due_date and due_time:
+                new_datetime = datetime.combine(due_date, due_time)
+            if st.button("Update Task"):
+                if update_task(task_id_to_update, user, title, description, new_datetime, priority if priority else None, category):
+                    st.success(f"✅ Task {task_id_to_update} updated successfully!")
+                    time.sleep(2)
+                    st.rerun()
+                else:
+                    st.error("❌ Task update failed.")
+
+    # --- Ask Follow-up Question ---
+    elif menu == "Ask Follow-up Question":
+        st.subheader("💬 Ask a Follow-up Question")
+        question = st.text_area("Type your question here")
+        if st.button("Submit Question"):
+            # Placeholder: Save question to DB or send notification
+            st.success("✅ Your question has been submitted!")
+            time.sleep(2)
+            st.rerun()
