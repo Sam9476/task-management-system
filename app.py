@@ -42,7 +42,6 @@ def get_tasks(user):
             SELECT t.task_id, t.title, t.description, t.due_date, t.status,
                    t.priority, t.category, u.username
             FROM Tasks t JOIN Users u ON t.assigned_to = u.user_id
-            WHERE u.role NOT IN ('Admin','Manager')
         """)
     else:
         cursor.execute("""
@@ -80,40 +79,6 @@ def delete_task(task_id, user):
             conn.commit()
             return True
     return False
-
-def get_overdue_and_today_tasks(user):
-    today = datetime.today().date()
-    if user[3] in ["Admin", "Manager"]:
-        cursor.execute("""
-            SELECT t.task_id, t.title, t.due_date, t.status, u.username
-            FROM Tasks t
-            LEFT JOIN Users u ON t.assigned_to=u.user_id
-            WHERE t.due_date < ? AND t.status='Pending'
-        """, (today,))
-        overdue = cursor.fetchall()
-
-        cursor.execute("""
-            SELECT t.task_id, t.title, t.due_date, t.status, u.username
-            FROM Tasks t
-            LEFT JOIN Users u ON t.assigned_to=u.user_id
-            WHERE t.due_date = ? AND t.status='Pending'
-        """, (today,))
-        today_tasks = cursor.fetchall()
-    else:
-        cursor.execute("""
-            SELECT t.task_id, t.title, t.due_date, t.status, u.username
-            FROM Tasks t JOIN Users u ON t.assigned_to=u.user_id
-            WHERE t.due_date < ? AND t.status='Pending' AND t.assigned_to=?
-        """, (today, user[0]))
-        overdue = cursor.fetchall()
-
-        cursor.execute("""
-            SELECT t.task_id, t.title, t.due_date, t.status, u.username
-            FROM Tasks t JOIN Users u ON t.assigned_to=u.user_id
-            WHERE t.due_date = ? AND t.status='Pending' AND t.assigned_to=?
-        """, (today, user[0]))
-        today_tasks = cursor.fetchall()
-    return overdue, today_tasks
 
 def highlight_status(val):
     if val == "Pending":
@@ -229,29 +194,28 @@ else:
                             st.info("Delete cancelled.")
 
     # --- Overdue & Today Tasks ---
-elif menu == "Overdue & Today Tasks":
-    st.subheader("⚠️ Deadlines Overview")
+    elif menu == "Overdue & Today Tasks":
+        st.subheader("⚠️ Deadlines Overview")
+        if not df_tasks.empty:
+            # Overdue tasks
+            df_overdue = df_tasks[df_tasks['Status'] == 'Overdue']
+            st.markdown("### 🔴 Overdue Tasks")
+            if not df_overdue.empty:
+                st.dataframe(df_overdue.style.applymap(highlight_status, subset=["Status"]),
+                             use_container_width=True, height=min(250, 50 + len(df_overdue)*35))
+            else:
+                st.success("🎉 No overdue tasks!")
 
-    if not df_tasks.empty:
-        # Overdue tasks
-        df_overdue = df_tasks[(df_tasks['Due Date'].dt.date < today) & (df_tasks['Status'] == 'Overdue')]
-        st.markdown("### 🔴 Overdue Tasks")
-        if not df_overdue.empty:
-            st.dataframe(df_overdue.style.applymap(highlight_status, subset=["Status"]),
-                         use_container_width=True, height=min(250, 50 + len(df_overdue) * 35))
+            # Tasks due today (logic same as sidebar)
+            df_today = df_tasks[df_tasks['Due Date'].dt.date == today]
+            st.markdown("### 🟡 Tasks Due Today")
+            if not df_today.empty:
+                st.dataframe(df_today.style.applymap(highlight_status, subset=["Status"]),
+                             use_container_width=True, height=min(250, 50 + len(df_today)*35))
+            else:
+                st.info("No tasks due today.")
         else:
-            st.success("🎉 No overdue tasks!")
-
-        # Tasks due today
-        df_today = df_tasks[df_tasks['Due Date'].dt.date == today]
-        st.markdown("### 🟡 Tasks Due Today")
-        if not df_today.empty:
-            st.dataframe(df_today.style.applymap(highlight_status, subset=["Status"]),
-                         use_container_width=True, height=min(250, 50 + len(df_today) * 35))
-        else:
-            st.info("No tasks due today.")
-    else:
-        st.info("No tasks found.")
+            st.info("No tasks found.")
 
     # --- Create Task ---
     elif menu == "Create Task":
@@ -286,5 +250,3 @@ elif menu == "Overdue & Today Tasks":
                 st.warning("No users available to assign.")
         else:
             st.info("Only Admin/Manager can create tasks.")
-
-
