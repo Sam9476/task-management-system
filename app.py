@@ -52,6 +52,10 @@ def get_tasks(user):
         """, (user[0],))
     return cursor.fetchall()
 
+def get_task_by_id(task_id):
+    cursor.execute("SELECT * FROM Tasks WHERE task_id=?", (task_id,))
+    return cursor.fetchone()
+
 def add_task(creator, title, description, due_date, priority, category, assign_to):
     if creator[3] in ["Admin", "Manager"]:
         cursor.execute("""
@@ -63,24 +67,22 @@ def add_task(creator, title, description, due_date, priority, category, assign_t
     return False
 
 def update_task(task_id, user, title=None, description=None, due_date=None, priority=None, category=None):
-    cursor.execute("SELECT * FROM Tasks WHERE task_id=?", (task_id,))
-    task = cursor.fetchone()
-    if not task:
+    task = get_task_by_id(task_id)
+    if not task or user[3] not in ["Admin", "Manager"]:
         return False
-    if user[3] in ["Admin", "Manager"]:
-        updates = []
-        params = []
-        if title: updates.append("title=?"); params.append(title)
-        if description: updates.append("description=?"); params.append(description)
-        if due_date: updates.append("due_date=?"); params.append(due_date)
-        if priority: updates.append("priority=?"); params.append(priority)
-        if category: updates.append("category=?"); params.append(category)
-        params.append(task_id)
-        if updates:
-            cursor.execute(f"UPDATE Tasks SET {', '.join(updates)} WHERE task_id=?", params)
-            conn.commit()
-            return True
-    return False
+    updates = []
+    params = []
+    if title: updates.append("title=?"); params.append(title)
+    if description: updates.append("description=?"); params.append(description)
+    if due_date: updates.append("due_date=?"); params.append(due_date)
+    if priority: updates.append("priority=?"); params.append(priority)
+    if category: updates.append("category=?"); params.append(category)
+    if not updates:
+        return False
+    params.append(task_id)
+    cursor.execute(f"UPDATE Tasks SET {', '.join(updates)} WHERE task_id=?", params)
+    conn.commit()
+    return True
 
 def mark_task_complete(task_id, user):
     cursor.execute("SELECT assigned_to FROM Tasks WHERE task_id=?", (task_id,))
@@ -131,9 +133,12 @@ def get_overdue_and_today_tasks(user):
     return overdue, today_tasks
 
 def highlight_status(val):
-    if val == "Pending": return "background-color: #fde68a; color: black;"
-    elif val == "Completed": return "background-color: #86efac; color: black;"
-    elif val == "Overdue": return "background-color: #fca5a5; color: black;"
+    if val == "Pending":
+        return "background-color: #fde68a; color: black;"
+    elif val == "Completed":
+        return "background-color: #86efac; color: black;"
+    elif val == "Overdue":
+        return "background-color: #fca5a5; color: black;"
     return ""
 
 def format_datetime(dt):
@@ -156,14 +161,15 @@ if "user" not in st.session_state:
         if user:
             st.session_state.user = user
             st.success(f"✅ Logged in as {user[1]} ({user[3]})")
-            time.sleep(1)
+            time.sleep(2)
             st.rerun()
         else:
             st.error("❌ Invalid credentials")
+
 else:
     user = st.session_state.user
 
-    # Sidebar
+    # Sidebar Navigation + Task Counts
     st.sidebar.header("📌 Navigation")
     st.sidebar.write(f"👤 {user[1]} ({user[3]})")
 
@@ -192,8 +198,8 @@ else:
     # --- Logout ---
     if menu == "Logout":
         st.session_state.clear()
-        st.success("✅ Logged out")
-        time.sleep(1)
+        st.success("✅ You have been logged out.")
+        time.sleep(2)
         st.rerun()
 
     # --- View Tasks ---
@@ -207,6 +213,28 @@ else:
         else:
             st.info("ℹ️ No tasks found.")
 
+        if user[3] not in ["Admin", "Manager"] and tasks:
+            st.subheader("✅ Mark Task as Completed")
+            task_id_to_complete = st.number_input("Enter Task ID", min_value=1, step=1)
+            if st.button("Mark as Complete"):
+                if mark_task_complete(task_id_to_complete, user):
+                    st.success(f"Task {task_id_to_complete} completed 🎉")
+                    time.sleep(2)
+                    st.rerun()
+                else:
+                    st.error("❌ Not authorized or task not found.")
+
+        if user[3] in ["Admin", "Manager"] and tasks:
+            st.subheader("🗑️ Delete Task")
+            task_id_to_delete = st.number_input("Enter Task ID to delete", min_value=1, step=1, key="delete")
+            if st.button("Delete Task"):
+                if delete_task(task_id_to_delete, user):
+                    st.success(f"🗑️ Task {task_id_to_delete} deleted successfully!")
+                    time.sleep(2)
+                    st.rerun()
+                else:
+                    st.error("❌ Task not found.")
+
     # --- Overdue & Today Tasks ---
     elif menu == "Overdue & Today Tasks":
         st.subheader("⚠️ Deadlines Overview")
@@ -216,14 +244,17 @@ else:
             df_overdue = pd.DataFrame(overdue, columns=["Task ID", "Title", "Due Date", "Status", "Assigned To"])
             df_overdue['Status'] = 'Overdue'
             df_overdue['Due Date'] = df_overdue['Due Date'].apply(format_datetime)
-            st.dataframe(df_overdue.style.applymap(highlight_status, subset=["Status"]), use_container_width=True, height=250)
+            st.dataframe(df_overdue.style.applymap(highlight_status, subset=["Status"]),
+                         use_container_width=True, height=250)
         else:
             st.success("🎉 No overdue tasks!")
+
         st.markdown("### 🟡 Tasks Due Today")
         if today_tasks:
             df_today = pd.DataFrame(today_tasks, columns=["Task ID", "Title", "Due Date", "Status", "Assigned To"])
             df_today['Due Date'] = df_today['Due Date'].apply(format_datetime)
-            st.dataframe(df_today.style.applymap(highlight_status, subset=["Status"]), use_container_width=True, height=250)
+            st.dataframe(df_today.style.applymap(highlight_status, subset=["Status"]),
+                         use_container_width=True, height=250)
         else:
             st.info("No tasks due today.")
 
@@ -243,13 +274,15 @@ else:
             users_list = cursor.fetchall()
             if users_list:
                 assign_to_name = st.selectbox("Assign To", [u[1] for u in users_list])
-                assign_to = [u[0] for u in users_list if u[1]==assign_to_name][0]
+                assign_to = [u[0] for u in users_list if u[1] == assign_to_name][0]
 
                 if st.button("Add Task"):
                     if add_task(user, title, description, due_datetime, priority, category, assign_to):
                         st.success("✅ Task created successfully!")
-                        time.sleep(1)
+                        time.sleep(2)
                         st.rerun()
+                    else:
+                        st.error("❌ Not authorized.")
             else:
                 st.warning("No users available to assign.")
         else:
@@ -260,45 +293,38 @@ else:
         st.subheader("✏️ Update Existing Task")
         if user[3] in ["Admin", "Manager"]:
             task_id_to_update = st.number_input("Enter Task ID to update", min_value=1, step=1)
-            task_data = None
-            if task_id_to_update:
-                cursor.execute("SELECT title, description, due_date, priority, category FROM Tasks WHERE task_id=?", (task_id_to_update,))
-                task_data = cursor.fetchone()
+            task_data = get_task_by_id(task_id_to_update)
             if task_data:
-                title = st.text_input("Title", value=task_data[0])
-                description = st.text_area("Description", value=task_data[1])
-                due_dt = datetime.fromisoformat(task_data[2])
-                due_date = st.date_input("Due Date", value=due_dt.date())
-                due_time = st.time_input("Time", value=due_dt.time())
-                priority = st.selectbox("Priority", ["Low", "Medium", "High"], index=["Low","Medium","High"].index(task_data[3]))
-                category = st.text_input("Category", value=task_data[4])
+                # Auto-populate fields
+                title = st.text_input("New Title", value=task_data[1])
+                description = st.text_area("New Description", value=task_data[2])
+                due_datetime_existing = datetime.fromisoformat(task_data[3])
+                due_date = st.date_input("New Due Date", value=due_datetime_existing.date())
+                due_time = st.time_input("New Time", value=due_datetime_existing.time())
+                priority = st.selectbox("New Priority", ["Low", "Medium", "High"], index=["Low","Medium","High"].index(task_data[5]))
+                category = st.text_input("New Category", value=task_data[6])
                 new_datetime = datetime.combine(due_date, due_time)
                 if st.button("Update Task"):
                     if update_task(task_id_to_update, user, title, description, new_datetime, priority, category):
-                        st.success("✅ Task updated successfully")
-                        time.sleep(1)
+                        st.success(f"✅ Task {task_id_to_update} updated successfully!")
+                        time.sleep(2)
                         st.rerun()
                     else:
-                        st.error("❌ Task update failed")
+                        st.error("❌ Task update failed.")
             else:
-                st.warning("❌ Invalid Task ID")
+                st.error("❌ Invalid Task ID")
 
     # --- Ask Follow-up Question ---
     elif menu == "Ask Follow-up Question":
         st.subheader("💬 Ask a Follow-up Question")
-        task_id_for_comment = st.number_input("Enter Task ID", min_value=1, step=1)
-        comment = st.text_area("Type your comment here")
-        valid_task = False
-        if task_id_for_comment:
-            cursor.execute("SELECT * FROM Tasks WHERE task_id=?",(task_id_for_comment,))
-            task_exists = cursor.fetchone()
-            if task_exists:
-                valid_task = True
-        if st.button("Submit Comment"):
-            if valid_task and comment.strip():
-                # Here: you can insert into FollowUpComments table if exists
-                st.success("✅ Comment submitted!")
-                time.sleep(1)
+        task_id = st.number_input("Task ID", min_value=1, step=1)
+        task = get_task_by_id(task_id)
+        question = st.text_area("Type your question here")
+        if st.button("Submit Question"):
+            if task:
+                # Placeholder: Save to DB / Notification
+                st.success(f"✅ Your question for Task ID {task_id} has been submitted!")
+                time.sleep(2)
                 st.rerun()
             else:
-                st.error("❌ Invalid Task ID or empty comment")
+                st.error("❌ Invalid Task ID. Cannot submit question.")
