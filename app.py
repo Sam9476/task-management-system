@@ -86,14 +86,17 @@ def get_overdue_and_today_tasks(user):
     if user[3] in ["Admin", "Manager"]:
         cursor.execute("""
             SELECT t.task_id, t.title, t.due_date, t.status, u.username
-            FROM Tasks t JOIN Users u ON t.assigned_to=u.user_id
-            WHERE t.due_date < ? AND t.status='Pending' AND u.role NOT IN ('Admin','Manager')
+            FROM Tasks t
+            LEFT JOIN Users u ON t.assigned_to=u.user_id
+            WHERE t.due_date < ? AND t.status='Pending'
         """, (today,))
         overdue = cursor.fetchall()
+
         cursor.execute("""
             SELECT t.task_id, t.title, t.due_date, t.status, u.username
-            FROM Tasks t JOIN Users u ON t.assigned_to=u.user_id
-            WHERE t.due_date = ? AND t.status='Pending' AND u.role NOT IN ('Admin','Manager')
+            FROM Tasks t
+            LEFT JOIN Users u ON t.assigned_to=u.user_id
+            WHERE t.due_date = ? AND t.status='Pending'
         """, (today,))
         today_tasks = cursor.fetchall()
     else:
@@ -103,6 +106,7 @@ def get_overdue_and_today_tasks(user):
             WHERE t.due_date < ? AND t.status='Pending' AND t.assigned_to=?
         """, (today, user[0]))
         overdue = cursor.fetchall()
+
         cursor.execute("""
             SELECT t.task_id, t.title, t.due_date, t.status, u.username
             FROM Tasks t JOIN Users u ON t.assigned_to=u.user_id
@@ -281,3 +285,4 @@ else:
                 st.warning("No users available to assign.")
         else:
             st.info("Only Admin/Manager can create tasks.")
+
