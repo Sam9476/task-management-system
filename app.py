@@ -15,26 +15,19 @@ cursor = conn.cursor()
 # --------------------------
 st.markdown("""
     <style>
-    /* Main page background */
     .stApp {
         background: linear-gradient(135deg, #f0f4f8, #d9e2ec);
     }
-
-    /* Headers */
     h1, h2, h3, h4 {
-        color: #1e3a8a; /* deep blue */
+        color: #1e3a8a;
         font-family: 'Segoe UI', sans-serif;
     }
-
-    /* Sidebar */
     section[data-testid="stSidebar"] {
         background-color: #1e293b;
     }
     section[data-testid="stSidebar"] * {
         color: white !important;
     }
-
-    /* Tables */
     .dataframe {
         border-collapse: collapse;
         border-radius: 12px;
@@ -52,8 +45,6 @@ st.markdown("""
         text-align: center;
         background: #f9fafb;
     }
-
-    /* Success & Error boxes */
     .stSuccess {
         background-color: #dcfce7 !important;
         color: #166534 !important;
@@ -64,8 +55,6 @@ st.markdown("""
         color: #991b1b !important;
         border-radius: 10px;
     }
-
-    /* Buttons */
     button {
         border-radius: 8px !important;
         padding: 0.6em 1.2em;
@@ -157,6 +146,16 @@ def get_overdue_and_today_tasks(user):
         today_tasks = cursor.fetchall()
     return overdue, today_tasks
 
+# --- Styling for DataFrame ---
+def highlight_status(val):
+    if val == "Pending":
+        return "background-color: #fde68a; color: black;"  # yellow
+    elif val == "Completed":
+        return "background-color: #86efac; color: black;"  # green
+    elif val == "Overdue":
+        return "background-color: #fca5a5; color: black;"  # red
+    return ""
+
 # --------------------------
 # Streamlit App
 # --------------------------
@@ -172,6 +171,7 @@ if "user" not in st.session_state:
         if user:
             st.session_state.user = user
             st.success(f"✅ Logged in as {user[1]} ({user[3]})")
+            time.sleep(2)
             st.rerun()
         else:
             st.error("❌ Invalid credentials")
@@ -186,6 +186,7 @@ else:
     if menu == "Logout":
         st.session_state.clear()
         st.success("✅ You have been logged out.")
+        time.sleep(2)
         st.rerun()
 
     # View Tasks
@@ -197,7 +198,8 @@ else:
                 "Task ID", "Title", "Description", "Due Date", 
                 "Status", "Priority", "Category", "Assigned To"
             ])
-            st.dataframe(df, use_container_width=True)
+            styled_df = df.style.applymap(highlight_status, subset=["Status"])
+            st.dataframe(styled_df, use_container_width=True)
         else:
             st.info("ℹ️ No tasks found.")
 
@@ -208,7 +210,7 @@ else:
             if st.button("Mark as Complete"):
                 if mark_task_complete(task_id_to_complete, user):
                     st.success(f"Task {task_id_to_complete} completed 🎉")
-                    time.sleep(1.2)
+                    time.sleep(2)
                     st.rerun()
                 else:
                     st.error("❌ Not authorized or task not found.")
@@ -220,7 +222,7 @@ else:
             if st.button("Delete Task"):
                 if delete_task(task_id_to_delete, user):
                     st.success(f"🗑️ Task {task_id_to_delete} deleted successfully!")
-                    time.sleep(1.2)
+                    time.sleep(2)
                     st.rerun()
                 else:
                     st.error("❌ Task not found.")
@@ -232,14 +234,17 @@ else:
         st.markdown("### 🔴 Overdue Tasks")
         if overdue:
             df_overdue = pd.DataFrame(overdue, columns=["Task ID", "Title", "Due Date", "Status", "Assigned To"])
-            st.dataframe(df_overdue, use_container_width=True)
+            df_overdue["Status"] = "Overdue"
+            styled_overdue = df_overdue.style.applymap(highlight_status, subset=["Status"])
+            st.dataframe(styled_overdue, use_container_width=True)
         else:
             st.success("🎉 No overdue tasks!")
 
         st.markdown("### 🟡 Tasks Due Today")
         if today_tasks:
             df_today = pd.DataFrame(today_tasks, columns=["Task ID", "Title", "Due Date", "Status", "Assigned To"])
-            st.dataframe(df_today, use_container_width=True)
+            styled_today = df_today.style.applymap(highlight_status, subset=["Status"])
+            st.dataframe(styled_today, use_container_width=True)
         else:
             st.info("No tasks due today.")
 
@@ -264,7 +269,7 @@ else:
                 if st.button("Add Task"):
                     if add_task(user, title, description, due_datetime, priority, category, assign_to):
                         st.success("✅ Task created successfully!")
-                        time.sleep(1.2)
+                        time.sleep(2)
                         st.rerun()
                     else:
                         st.error("❌ Not authorized.")
