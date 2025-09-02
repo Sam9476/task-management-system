@@ -1,7 +1,7 @@
 import streamlit as st
 import sqlite3
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime
 import time
 
 # --------------------------
@@ -122,10 +122,7 @@ def highlight_status(val):
 
 def format_datetime(dt):
     if isinstance(dt, str):
-        try:
-            dt = datetime.fromisoformat(dt)
-        except Exception:
-            return dt
+        dt = datetime.fromisoformat(dt)
     return dt.strftime("%d-%b-%Y %H:%M")
 
 # --------------------------
@@ -155,19 +152,20 @@ else:
     st.sidebar.header("📌 Navigation")
     st.sidebar.write(f"👤 {user[1]} ({user[3]})")
 
-    # Task overview
     tasks = get_tasks(user)
     df_tasks = pd.DataFrame(tasks, columns=["Task ID", "Title", "Description", "Due Date",
                                             "Status", "Priority", "Category", "Assigned To"])
-    df_tasks = df_tasks.dropna(how="all")  # Remove empty rows
+
+    if not df_tasks.empty:
+        df_tasks['Due Date'] = pd.to_datetime(df_tasks['Due Date'], errors='coerce')
+        today = datetime.today().date()
+        df_tasks.loc[df_tasks['Due Date'].dt.date < today, 'Status'] = 'Overdue'
 
     total_tasks = len(df_tasks)
-    pending_count = df_tasks[df_tasks['Status']=='Pending'].shape[0]
-    completed_count = df_tasks[df_tasks['Status']=='Completed'].shape[0]
-    overdue_count = df_tasks[df_tasks['Status']=='Overdue'].shape[0]
-
-    today = datetime.today().date()
-    today_count = df_tasks[pd.to_datetime(df_tasks['Due Date'], errors="coerce").dt.date==today].shape[0]
+    pending_count = df_tasks[df_tasks['Status'] == 'Pending'].shape[0]
+    completed_count = df_tasks[df_tasks['Status'] == 'Completed'].shape[0]
+    overdue_count = df_tasks[df_tasks['Status'] == 'Overdue'].shape[0]
+    today_count = df_tasks[df_tasks['Due Date'].dt.date == today].shape[0] if not df_tasks.empty else 0
 
     st.sidebar.markdown("### 📝 Task Overview")
     st.sidebar.markdown(f"Total: **{total_tasks}**")
@@ -189,9 +187,7 @@ else:
     elif menu == "View Tasks":
         st.subheader("📋 All Tasks")
         if not df_tasks.empty:
-            df_tasks['Due Date'] = df_tasks['Due Date'].apply(format_datetime)
-            # Mark overdue dynamically
-            df_tasks.loc[pd.to_datetime(df_tasks['Due Date'], errors="coerce").dt.date < today, 'Status'] = 'Overdue'
+            df_tasks['Due Date'] = df_tasks['Due Date'].apply(lambda x: format_datetime(x) if pd.notnull(x) else "")
             styled_df = df_tasks.style.applymap(highlight_status, subset=["Status"])
             st.dataframe(styled_df, use_container_width=True, height=400)
         else:
@@ -209,13 +205,12 @@ else:
                 else:
                     st.error("❌ Not authorized or task not found.")
 
-        # Delete task
+        # Delete task with confirmation
         if user[3] in ["Admin", "Manager"] and not df_tasks.empty:
             st.subheader("🗑️ Delete Task")
             task_id_to_delete = st.number_input("Enter Task ID to delete", min_value=1, step=1, key="delete")
-            confirm = st.checkbox("Confirm delete", key="confirm_delete")
             if st.button("Delete Task"):
-                if confirm:
+                if st.checkbox("⚠️ Confirm delete"):
                     if delete_task(task_id_to_delete, user):
                         st.success(f"🗑️ Task {task_id_to_delete} deleted successfully!")
                         time.sleep(2)
@@ -223,7 +218,7 @@ else:
                     else:
                         st.error("❌ Task not found.")
                 else:
-                    st.warning("⚠️ Please confirm deletion before proceeding.")
+                    st.warning("Please confirm deletion before proceeding.")
 
     # --- Overdue & Today Tasks ---
     elif menu == "Overdue & Today Tasks":
@@ -234,7 +229,7 @@ else:
         if overdue:
             df_overdue = pd.DataFrame(overdue, columns=["Task ID", "Title", "Due Date", "Status", "Assigned To"])
             df_overdue['Status'] = 'Overdue'
-            df_overdue['Due Date'] = df_overdue['Due Date'].apply(format_datetime)
+            df_overdue['Due Date'] = pd.to_datetime(df_overdue['Due Date'], errors='coerce').apply(format_datetime)
             st.dataframe(df_overdue.style.applymap(highlight_status, subset=["Status"]),
                          use_container_width=True, height=250)
         else:
@@ -243,7 +238,7 @@ else:
         st.markdown("### 🟡 Tasks Due Today")
         if today_tasks:
             df_today = pd.DataFrame(today_tasks, columns=["Task ID", "Title", "Due Date", "Status", "Assigned To"])
-            df_today['Due Date'] = df_today['Due Date'].apply(format_datetime)
+            df_today['Due Date'] = pd.to_datetime(df_today['Due Date'], errors='coerce').apply(format_datetime)
             st.dataframe(df_today.style.applymap(highlight_status, subset=["Status"]),
                          use_container_width=True, height=250)
         else:
@@ -253,27 +248,30 @@ else:
     elif menu == "Create Task":
         st.subheader("➕ Create New Task")
         if user[3] in ["Admin", "Manager"]:
-            title = st.text_input("Title")
-            description = st.text_area("Description")
-            due_date = st.date_input("Due Date")
-            due_time = st.time_input("Time")
-            priority = st.selectbox("Priority", ["Low", "Medium", "High"])
+            title = st.text_input("Title *")
+            description = st.text_area("Description *")
+            due_date = st.date_input("Due Date *")
+            due_time = st.time_input("Time *")
+            priority = st.selectbox("Priority *", ["Low", "Medium", "High"])
             category = st.text_input("Category", "General")
             due_datetime = datetime.combine(due_date, due_time)
 
             cursor.execute("SELECT user_id, username FROM Users WHERE user_id != ?", (user[0],))
             users_list = cursor.fetchall()
             if users_list:
-                assign_to_name = st.selectbox("Assign To", [u[1] for u in users_list])
+                assign_to_name = st.selectbox("Assign To *", [u[1] for u in users_list])
                 assign_to = [u[0] for u in users_list if u[1] == assign_to_name][0]
 
                 if st.button("Add Task"):
-                    if add_task(user, title, description, due_datetime, priority, category, assign_to):
-                        st.success("✅ Task created successfully!")
-                        time.sleep(2)
-                        st.rerun()
+                    if not title.strip() or not description.strip() or not due_date or not assign_to:
+                        st.error("❌ All required fields must be filled.")
                     else:
-                        st.error("❌ Not authorized.")
+                        if add_task(user, title, description, due_datetime, priority, category, assign_to):
+                            st.success("✅ Task created successfully!")
+                            time.sleep(2)
+                            st.rerun()
+                        else:
+                            st.error("❌ Not authorized.")
             else:
                 st.warning("No users available to assign.")
         else:
