@@ -229,28 +229,29 @@ else:
                             st.info("Delete cancelled.")
 
     # --- Overdue & Today Tasks ---
-    elif menu == "Overdue & Today Tasks":
-        st.subheader("⚠️ Deadlines Overview")
-        overdue, today_tasks = get_overdue_and_today_tasks(user)
+elif menu == "Overdue & Today Tasks":
+    st.subheader("⚠️ Deadlines Overview")
 
+    if not df_tasks.empty:
+        # Overdue tasks
+        df_overdue = df_tasks[(df_tasks['Due Date'].dt.date < today) & (df_tasks['Status'] == 'Overdue')]
         st.markdown("### 🔴 Overdue Tasks")
-        if overdue:
-            df_overdue = pd.DataFrame(overdue, columns=["Task ID", "Title", "Due Date", "Status", "Assigned To"])
-            df_overdue['Status'] = 'Overdue'
-            df_overdue['Due Date'] = pd.to_datetime(df_overdue['Due Date'], errors='coerce').apply(format_datetime)
+        if not df_overdue.empty:
             st.dataframe(df_overdue.style.applymap(highlight_status, subset=["Status"]),
-                         use_container_width=True, height=min(250, 50+len(df_overdue)*35))
+                         use_container_width=True, height=min(250, 50 + len(df_overdue) * 35))
         else:
             st.success("🎉 No overdue tasks!")
 
+        # Tasks due today
+        df_today = df_tasks[df_tasks['Due Date'].dt.date == today]
         st.markdown("### 🟡 Tasks Due Today")
-        if today_tasks:
-            df_today = pd.DataFrame(today_tasks, columns=["Task ID", "Title", "Due Date", "Status", "Assigned To"])
-            df_today['Due Date'] = pd.to_datetime(df_today['Due Date'], errors='coerce').apply(format_datetime)
+        if not df_today.empty:
             st.dataframe(df_today.style.applymap(highlight_status, subset=["Status"]),
-                         use_container_width=True, height=min(250, 50+len(df_today)*35))
+                         use_container_width=True, height=min(250, 50 + len(df_today) * 35))
         else:
             st.info("No tasks due today.")
+    else:
+        st.info("No tasks found.")
 
     # --- Create Task ---
     elif menu == "Create Task":
@@ -285,4 +286,5 @@ else:
                 st.warning("No users available to assign.")
         else:
             st.info("Only Admin/Manager can create tasks.")
+
 
