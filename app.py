@@ -42,6 +42,7 @@ def get_tasks(user):
             SELECT t.task_id, t.title, t.description, t.due_date, t.status,
                    t.priority, t.category, u.username
             FROM Tasks t JOIN Users u ON t.assigned_to = u.user_id
+            WHERE u.role NOT IN ('Admin','Manager')
         """)
     else:
         cursor.execute("""
@@ -86,13 +87,13 @@ def get_overdue_and_today_tasks(user):
         cursor.execute("""
             SELECT t.task_id, t.title, t.due_date, t.status, u.username
             FROM Tasks t JOIN Users u ON t.assigned_to=u.user_id
-            WHERE t.due_date < ? AND t.status='Pending'
+            WHERE t.due_date < ? AND t.status='Pending' AND u.role NOT IN ('Admin','Manager')
         """, (today,))
         overdue = cursor.fetchall()
         cursor.execute("""
             SELECT t.task_id, t.title, t.due_date, t.status, u.username
             FROM Tasks t JOIN Users u ON t.assigned_to=u.user_id
-            WHERE t.due_date = ? AND t.status='Pending'
+            WHERE t.due_date = ? AND t.status='Pending' AND u.role NOT IN ('Admin','Manager')
         """, (today,))
         today_tasks = cursor.fetchall()
     else:
@@ -267,7 +268,8 @@ else:
             category = st.text_input("Category", "General")
             due_datetime = datetime.combine(due_date, due_time)
 
-            cursor.execute("SELECT user_id, username FROM Users WHERE user_id != ?", (user[0],))
+            # Exclude Admin and Manager from assignable users
+            cursor.execute("SELECT user_id, username FROM Users WHERE role NOT IN ('Admin','Manager')")
             users_list = cursor.fetchall()
 
             if users_list:
