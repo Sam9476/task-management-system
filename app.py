@@ -206,7 +206,6 @@ else:
             else:
                 st.success("🎉 No overdue tasks!")
 
-            # Tasks due today (logic same as sidebar)
             df_today = df_tasks[df_tasks['Due Date'].dt.date == today]
             st.markdown("### 🟡 Tasks Due Today")
             if not df_today.empty:
@@ -250,3 +249,4 @@ else:
                 st.warning("No users available to assign.")
         else:
             st.info("Only Admin/Manager can create tasks.")
+
