@@ -15,51 +15,17 @@ cursor = conn.cursor()
 # --------------------------
 st.markdown("""
     <style>
-    .stApp {
-        background: linear-gradient(135deg, #f0f4f8, #d9e2ec);
-    }
-    h1, h2, h3, h4 {
-        color: #1e3a8a;
-        font-family: 'Segoe UI', sans-serif;
-    }
-    section[data-testid="stSidebar"] {
-        background-color: #1e293b;
-    }
-    section[data-testid="stSidebar"] * {
-        color: white !important;
-    }
-    .dataframe {
-        border-collapse: collapse;
-        border-radius: 12px;
-        overflow: hidden;
-        box-shadow: 0px 2px 8px rgba(0,0,0,0.1);
-    }
-    .dataframe th {
-        background: #1e3a8a;
-        color: white !important;
-        text-align: center;
-        padding: 8px;
-    }
-    .dataframe td {
-        padding: 8px;
-        text-align: center;
-        background: #f9fafb;
-    }
-    .stSuccess {
-        background-color: #dcfce7 !important;
-        color: #166534 !important;
-        border-radius: 10px;
-    }
-    .stError {
-        background-color: #fee2e2 !important;
-        color: #991b1b !important;
-        border-radius: 10px;
-    }
-    button {
-        border-radius: 8px !important;
-        padding: 0.6em 1.2em;
-        font-weight: bold;
-    }
+    .stApp {background: linear-gradient(135deg, #f0f4f8, #d9e2ec);}
+    h1, h2, h3, h4 {color: #1e3a8a; font-family: 'Segoe UI', sans-serif;}
+    section[data-testid="stSidebar"] {background-color: #1e293b;}
+    section[data-testid="stSidebar"] * {color: white !important;}
+    .dataframe {border-collapse: collapse; border-radius: 12px; overflow: hidden;
+                box-shadow: 0px 2px 8px rgba(0,0,0,0.1);}
+    .dataframe th {background: #1e3a8a; color: white !important; text-align: center; padding: 8px;}
+    .dataframe td {padding: 8px; text-align: center; background: #f9fafb;}
+    .stSuccess {background-color: #dcfce7 !important; color: #166534 !important; border-radius: 10px;}
+    .stError {background-color: #fee2e2 !important; color: #991b1b !important; border-radius: 10px;}
+    button {border-radius: 8px !important; padding: 0.6em 1.2em; font-weight: bold;}
     </style>
 """, unsafe_allow_html=True)
 
@@ -73,17 +39,15 @@ def login_user(username, password):
 def get_tasks(user):
     if user[3] in ["Admin", "Manager"]:
         cursor.execute("""
-            SELECT t.task_id, t.title, t.description, t.due_date, t.status, 
+            SELECT t.task_id, t.title, t.description, t.due_date, t.status,
                    t.priority, t.category, u.username
-            FROM Tasks t
-            JOIN Users u ON t.assigned_to = u.user_id
+            FROM Tasks t JOIN Users u ON t.assigned_to = u.user_id
         """)
     else:
         cursor.execute("""
-            SELECT t.task_id, t.title, t.description, t.due_date, t.status, 
+            SELECT t.task_id, t.title, t.description, t.due_date, t.status,
                    t.priority, t.category, u.username
-            FROM Tasks t
-            JOIN Users u ON t.assigned_to = u.user_id
+            FROM Tasks t JOIN Users u ON t.assigned_to = u.user_id
             WHERE t.assigned_to = ?
         """, (user[0],))
     return cursor.fetchall()
@@ -146,7 +110,7 @@ def get_overdue_and_today_tasks(user):
         today_tasks = cursor.fetchall()
     return overdue, today_tasks
 
-# --- Styling for DataFrame ---
+# Styling for status badges
 def highlight_status(val):
     if val == "Pending":
         return "background-color: #fde68a; color: black;"  # yellow
@@ -155,6 +119,11 @@ def highlight_status(val):
     elif val == "Overdue":
         return "background-color: #fca5a5; color: black;"  # red
     return ""
+
+def format_datetime(dt):
+    if isinstance(dt, str):
+        dt = datetime.fromisoformat(dt)
+    return dt.strftime("%d-%b-%Y %H:%M")
 
 # --------------------------
 # Streamlit App
@@ -178,8 +147,30 @@ if "user" not in st.session_state:
 
 else:
     user = st.session_state.user
+
+    # Sidebar Navigation + Task Counts
     st.sidebar.header("📌 Navigation")
     st.sidebar.write(f"👤 {user[1]} ({user[3]})")
+
+    # Task overview
+    tasks = get_tasks(user)
+    df_tasks = pd.DataFrame(tasks, columns=["Task ID", "Title", "Description", "Due Date",
+                                            "Status", "Priority", "Category", "Assigned To"])
+    total_tasks = len(df_tasks)
+    pending_count = df_tasks[df_tasks['Status']=='Pending'].shape[0]
+    completed_count = df_tasks[df_tasks['Status']=='Completed'].shape[0]
+    overdue_count = df_tasks[df_tasks['Status']=='Overdue'].shape[0]
+
+    today = datetime.today().date()
+    today_count = df_tasks[pd.to_datetime(df_tasks['Due Date']).dt.date==today].shape[0]
+
+    st.sidebar.markdown("### 📝 Task Overview")
+    st.sidebar.markdown(f"Total: **{total_tasks}**")
+    st.sidebar.markdown(f"🟡 Pending: **{pending_count}**")
+    st.sidebar.markdown(f"🟢 Completed: **{completed_count}**")
+    st.sidebar.markdown(f"🔴 Overdue: **{overdue_count}**")
+    st.sidebar.markdown(f"🟡 Due Today: **{today_count}**")
+
     menu = st.sidebar.radio("Go to", ["View Tasks", "Overdue & Today Tasks", "Create Task", "Logout"])
 
     # Logout
@@ -189,21 +180,19 @@ else:
         time.sleep(2)
         st.rerun()
 
-    # View Tasks
+    # --- View Tasks ---
     elif menu == "View Tasks":
         st.subheader("📋 All Tasks")
-        tasks = get_tasks(user)
         if tasks:
-            df = pd.DataFrame(tasks, columns=[
-                "Task ID", "Title", "Description", "Due Date", 
-                "Status", "Priority", "Category", "Assigned To"
-            ])
-            styled_df = df.style.applymap(highlight_status, subset=["Status"])
-            st.dataframe(styled_df, use_container_width=True)
+            df_tasks['Due Date'] = df_tasks['Due Date'].apply(format_datetime)
+            # Mark overdue dynamically
+            df_tasks.loc[pd.to_datetime(df_tasks['Due Date']).dt.date < today, 'Status'] = 'Overdue'
+            styled_df = df_tasks.style.applymap(highlight_status, subset=["Status"])
+            st.dataframe(styled_df, use_container_width=True, height=400)
         else:
             st.info("ℹ️ No tasks found.")
 
-        # Mark complete (for users)
+        # Mark complete
         if user[3] not in ["Admin", "Manager"] and tasks:
             st.subheader("✅ Mark Task as Completed")
             task_id_to_complete = st.number_input("Enter Task ID", min_value=1, step=1)
@@ -215,7 +204,7 @@ else:
                 else:
                     st.error("❌ Not authorized or task not found.")
 
-        # Delete task (for Admin/Manager)
+        # Delete task
         if user[3] in ["Admin", "Manager"] and tasks:
             st.subheader("🗑️ Delete Task")
             task_id_to_delete = st.number_input("Enter Task ID to delete", min_value=1, step=1, key="delete")
@@ -227,28 +216,31 @@ else:
                 else:
                     st.error("❌ Task not found.")
 
-    # Overdue & Today Tasks
+    # --- Overdue & Today Tasks ---
     elif menu == "Overdue & Today Tasks":
         st.subheader("⚠️ Deadlines Overview")
         overdue, today_tasks = get_overdue_and_today_tasks(user)
+
         st.markdown("### 🔴 Overdue Tasks")
         if overdue:
             df_overdue = pd.DataFrame(overdue, columns=["Task ID", "Title", "Due Date", "Status", "Assigned To"])
-            df_overdue["Status"] = "Overdue"
-            styled_overdue = df_overdue.style.applymap(highlight_status, subset=["Status"])
-            st.dataframe(styled_overdue, use_container_width=True)
+            df_overdue['Status'] = 'Overdue'
+            df_overdue['Due Date'] = df_overdue['Due Date'].apply(format_datetime)
+            st.dataframe(df_overdue.style.applymap(highlight_status, subset=["Status"]),
+                         use_container_width=True, height=250)
         else:
             st.success("🎉 No overdue tasks!")
 
         st.markdown("### 🟡 Tasks Due Today")
         if today_tasks:
             df_today = pd.DataFrame(today_tasks, columns=["Task ID", "Title", "Due Date", "Status", "Assigned To"])
-            styled_today = df_today.style.applymap(highlight_status, subset=["Status"])
-            st.dataframe(styled_today, use_container_width=True)
+            df_today['Due Date'] = df_today['Due Date'].apply(format_datetime)
+            st.dataframe(df_today.style.applymap(highlight_status, subset=["Status"]),
+                         use_container_width=True, height=250)
         else:
             st.info("No tasks due today.")
 
-    # Create Task
+    # --- Create Task ---
     elif menu == "Create Task":
         st.subheader("➕ Create New Task")
         if user[3] in ["Admin", "Manager"]:
