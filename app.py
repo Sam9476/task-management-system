@@ -192,7 +192,7 @@ else:
         if not df_tasks.empty:
             df_tasks['Due Date'] = df_tasks['Due Date'].apply(lambda x: format_datetime(x) if pd.notnull(x) else "")
             styled_df = df_tasks.style.applymap(highlight_status, subset=["Status"])
-            st.dataframe(styled_df, use_container_width=True, height=400)
+            st.dataframe(styled_df, use_container_width=True, height=min(400, 50 + len(df_tasks) * 35))
         else:
             st.info("ℹ️ No tasks found.")
 
@@ -208,19 +208,27 @@ else:
                 else:
                     st.error("❌ Not authorized or task not found.")
 
-        # Delete task with confirmation
+        # Delete task with popup confirmation
         if user[3] in ["Admin", "Manager"] and not df_tasks.empty:
             st.subheader("🗑️ Delete Task")
             task_id_to_delete = st.number_input("Enter Task ID to delete", min_value=1, step=1, key="delete")
-            if st.button("Delete Task"):
-                confirm = st.radio("⚠️ Confirm delete?", ["No", "Yes"], index=0, key="confirm_delete")
-                if confirm == "Yes":
-                    if delete_task(task_id_to_delete, user):
-                        st.success(f"🗑️ Task {task_id_to_delete} deleted successfully!")
-                        time.sleep(1)
-                        st.rerun()
-                    else:
-                        st.error("❌ Task not found.")
+
+            with st.expander("⚠️ Confirm Deletion"):
+                with st.form("delete_form", clear_on_submit=True):
+                    st.warning(f"Are you sure you want to delete Task ID {task_id_to_delete}? This cannot be undone.")
+                    confirm = st.radio("Please confirm:", ["No", "Yes"], index=0, key="confirm_delete")
+                    submitted = st.form_submit_button("Delete Task")
+
+                    if submitted:
+                        if confirm == "Yes":
+                            if delete_task(task_id_to_delete, user):
+                                st.success(f"🗑️ Task {task_id_to_delete} deleted successfully!")
+                                time.sleep(1)
+                                st.rerun()
+                            else:
+                                st.error("❌ Task not found.")
+                        else:
+                            st.info("Delete cancelled.")
 
     # --- Overdue & Today Tasks ---
     elif menu == "Overdue & Today Tasks":
@@ -233,7 +241,7 @@ else:
             df_overdue['Status'] = 'Overdue'
             df_overdue['Due Date'] = pd.to_datetime(df_overdue['Due Date'], errors='coerce').apply(format_datetime)
             st.dataframe(df_overdue.style.applymap(highlight_status, subset=["Status"]),
-                         use_container_width=True, height=250)
+                         use_container_width=True, height=min(250, 50 + len(df_overdue) * 35))
         else:
             st.success("🎉 No overdue tasks!")
 
@@ -242,7 +250,7 @@ else:
             df_today = pd.DataFrame(today_tasks, columns=["Task ID", "Title", "Due Date", "Status", "Assigned To"])
             df_today['Due Date'] = pd.to_datetime(df_today['Due Date'], errors='coerce').apply(format_datetime)
             st.dataframe(df_today.style.applymap(highlight_status, subset=["Status"]),
-                         use_container_width=True, height=250)
+                         use_container_width=True, height=min(250, 50 + len(df_today) * 35))
         else:
             st.info("No tasks due today.")
 
